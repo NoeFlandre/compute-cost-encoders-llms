@@ -6,3 +6,4 @@ theme:
   name: material
 nav:
   - Home: index.md
+  - Grid’5000: grid5000.md

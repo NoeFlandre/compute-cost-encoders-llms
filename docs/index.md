@@ -8,3 +8,5 @@ Data and experiment artifacts are stored in the public Hugging Face bucket
 repository on `main`.
 
 The project is licensed under Apache-2.0.
+
+Compute operations follow the [Grid’5000 operating contract](grid5000.md).

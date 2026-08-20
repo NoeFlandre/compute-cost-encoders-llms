@@ -34,11 +34,12 @@ def test_static_analysis_defaults_are_explicit() -> None:
     metadata = load_project_metadata()
 
     assert metadata["tool"]["ruff"]["target-version"] == "py312"
-    assert metadata["tool"]["ruff"]["src"] == ["src", "tests"]
+    assert metadata["tool"]["ruff"]["src"] == ["src", "tests", "scripts"]
     assert metadata["tool"]["ty"]["environment"]["python-version"] == "3.12"
 
 
 def test_project_contains_the_apache_license() -> None:
+    assert load_project_metadata()["project"]["license"] == "Apache-2.0"
     license_path = PROJECT_ROOT / "LICENSE"
     assert license_path.exists(), "The GitHub repository must include LICENSE."
 
@@ -52,7 +53,8 @@ def test_mutation_and_crap_limits_are_declared() -> None:
     metadata = load_project_metadata()
     mutmut = metadata["tool"]["mutmut"]
 
-    assert mutmut["source_paths"] == ["src"]
+    assert mutmut["source_paths"] == ["src", "scripts/grid5000"]
     assert mutmut["mutate_only_covered_lines"] is False
     assert mutmut["use_git_change_detection"] is False
+    assert mutmut["on_dependency_change"] == "rerun"
     assert "--max-crap 5.99" in (PROJECT_ROOT / "scripts" / "qa.sh").read_text()
