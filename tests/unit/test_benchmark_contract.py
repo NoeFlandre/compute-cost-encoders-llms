@@ -220,6 +220,26 @@ def test_parse_llama_completion_reads_candidate_logprobs() -> None:
     }
 
 
+def test_parse_llama_current_completion_shape_reads_top_logprobs() -> None:
+    payload = {
+        "completion_probabilities": [
+            {
+                "token": "\\n\\n",
+                "logprob": -0.05,
+                "top_logprobs": [
+                    {"token": " yes", "logprob": -3.0},
+                    {"token": " no", "logprob": -8.0},
+                ],
+            }
+        ]
+    }
+
+    assert parse_candidate_logprobs(payload, ("yes", "no")) == {
+        "yes": -3.0,
+        "no": -8.0,
+    }
+
+
 def test_parse_llama_completion_rejects_missing_candidate() -> None:
     with pytest.raises(LlamaResponseError, match="no"):
         parse_candidate_logprobs(

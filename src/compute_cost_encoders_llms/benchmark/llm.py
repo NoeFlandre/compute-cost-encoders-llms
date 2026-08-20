@@ -129,9 +129,11 @@ def _completion_entries(
 ) -> list[Mapping[str, object]] | None:
     first = _first_list_item(payload.get("completion_probabilities"))
     probabilities = _list_field(first, "probs")
-    if probabilities is None:
-        return None
-    return _with_top_logprobs(probabilities)
+    if probabilities is not None:
+        return _with_top_logprobs(probabilities)
+    if _list_field(first, "top_logprobs") is not None:
+        return _with_top_logprobs([first])
+    return None
 
 
 def _choice_entries(
