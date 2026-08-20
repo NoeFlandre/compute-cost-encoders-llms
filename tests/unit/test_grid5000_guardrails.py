@@ -58,6 +58,8 @@ def test_benchmark_entrypoint_requires_pinned_runtime_and_runs_locked_uv() -> No
     ):
         assert required in script
 
+    assert script.count("uv run --locked --extra benchmark --no-dev") == 3
+
 
 def test_grid5000_image_pins_llama_cpp_and_exposes_cuda_server() -> None:
     dockerfile = (PROJECT_ROOT / "Dockerfile.grid5000").read_text()

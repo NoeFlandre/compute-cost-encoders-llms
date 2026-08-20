@@ -19,7 +19,7 @@ run_backend() {
     local selected_backend="$1"
     mkdir -p "$output_dir/$selected_backend"
     # The Python request sets cache_prompt=false for independent measurements.
-    uv run --locked python -m compute_cost_encoders_llms.benchmark.cli \
+    uv run --locked --extra benchmark --no-dev python -m compute_cost_encoders_llms.benchmark.cli \
         --config "$config_path" \
         --output-dir "$output_dir/$selected_backend" \
         --backend "$selected_backend" \
@@ -32,7 +32,7 @@ ensure_qwen_model() {
     local filename="${GRID5000_LLM_FILENAME:-Qwen3.6-27B-Q4_K_M.gguf}"
     if [[ -z "${GRID5000_QWEN_MODEL_PATH:-}" ]]; then
         mkdir -p "$model_dir"
-        uv run --locked hf download ggml-org/Qwen3.6-27B-GGUF \
+        uv run --locked --extra benchmark --no-dev hf download ggml-org/Qwen3.6-27B-GGUF \
             --revision "$GRID5000_LLM_REVISION" \
             --include "$filename" \
             --local-dir "$model_dir"
@@ -82,7 +82,7 @@ render_report_and_checkpoint() {
     : "${GRID5000_DATASET_REVISION:?GRID5000_DATASET_REVISION must be pinned}"
     : "${GRID5000_MODEL_REVISION:?GRID5000_MODEL_REVISION must be pinned}"
     : "${GRID5000_ARTIFACT_PREFIX:?GRID5000_ARTIFACT_PREFIX must be set}"
-    uv run --locked python scripts/render_report.py \
+    uv run --locked --extra benchmark --no-dev python scripts/render_report.py \
         --encoder-dir "$output_dir/encoder" \
         --llm-dir "$output_dir/llm" \
         --output "$output_dir/landuse-logprob-report.tex" \
