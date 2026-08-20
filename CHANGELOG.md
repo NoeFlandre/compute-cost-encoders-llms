@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.2.1] - 2026-08-21
+
+- Refreshed the uv lockfile metadata so locked CI installs match the package version.
+
 ## [0.2.0] - 2026-08-21
 
 - Added the Grid’5000 V100 benchmark result for mmBERT and Qwen3.6-27B Q4_K_M.
