@@ -17,6 +17,13 @@ def test_submission_checks_policy_and_rejects_duplicate_jobs() -> None:
     assert "host=1/gpu=1,walltime=0:30" in script
 
 
+def test_submission_can_scope_queue_and_gpu_properties() -> None:
+    script = read_guardrail("submit.sh")
+
+    assert "GRID5000_QUEUE" in script
+    assert "GRID5000_PROPERTIES" in script
+
+
 def test_compute_runner_requires_reserved_nodes_and_locked_uv() -> None:
     script = read_guardrail("run.sh")
 

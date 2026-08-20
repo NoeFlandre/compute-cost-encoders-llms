@@ -20,6 +20,14 @@ run_id="${GRID5000_RUN_ID:-}"
 job_name="compute-cost-encoders-llms-${run_id}"
 resources="${GRID5000_RESOURCES:-host=1/gpu=1,walltime=0:30}"
 [[ "$resources" == *"walltime="* ]] || die "GRID5000_RESOURCES must set walltime"
+queue_args=()
+if [[ -n "${GRID5000_QUEUE:-}" ]]; then
+    queue_args=(-q "$GRID5000_QUEUE")
+fi
+property_args=()
+if [[ -n "${GRID5000_PROPERTIES:-}" ]]; then
+    property_args=(-p "$GRID5000_PROPERTIES")
+fi
 
 usagepolicycheck -t
 trap 'usagepolicycheck -t' EXIT
@@ -29,4 +37,4 @@ if grep -Fq "$job_name" <<<"$active_jobs"; then
     die "a job with run ID '$run_id' is already active; refusing a duplicate"
 fi
 
-oarsub -n "$job_name" -l "$resources" "$@"
+oarsub -n "$job_name" -l "$resources" "${queue_args[@]}" "${property_args[@]}" "$@"
