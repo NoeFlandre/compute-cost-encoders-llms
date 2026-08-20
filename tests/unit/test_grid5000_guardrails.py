@@ -75,6 +75,14 @@ def test_benchmark_entrypoint_exposes_the_checkout_package_to_uv() -> None:
     assert 'PYTHONPATH="$project_root/src:$project_root' in script
 
 
+def test_benchmark_runtime_pins_a_v100_compatible_torch_wheel() -> None:
+    pyproject = (PROJECT_ROOT / "pyproject.toml").read_text()
+
+    assert 'requires-python = ">=3.12,<3.14"' in pyproject
+    assert '"torch==2.6.0"' in pyproject
+    assert 'name = "pytorch-cu124"' in pyproject
+
+
 def test_grid5000_image_pins_llama_cpp_and_exposes_cuda_server() -> None:
     dockerfile = (PROJECT_ROOT / "Dockerfile.grid5000").read_text()
 
