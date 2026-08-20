@@ -42,7 +42,7 @@ python-version = "3.12"
 
 [tool.pytest.ini_options]
 testpaths = ["tests/unit", "tests/acceptance"]
-pythonpath = ["src"]
+pythonpath = [".", "src"]
 addopts = ["--strict-config", "--strict-markers"]
 filterwarnings = [
     "ignore:No data was collected\\.:coverage.exceptions.CoverageWarning",
@@ -59,6 +59,7 @@ exclude_also = ["if TYPE_CHECKING:"]
 source_paths = ["src", "scripts/grid5000"]
 also_copy = [
     "LICENSE",
+    "scripts/__init__.py",
     "scripts/qa.sh",
     "docs/",
     ".github/",

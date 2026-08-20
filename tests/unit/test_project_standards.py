@@ -36,6 +36,10 @@ def test_static_analysis_defaults_are_explicit() -> None:
     assert metadata["tool"]["ruff"]["target-version"] == "py312"
     assert metadata["tool"]["ruff"]["src"] == ["src", "tests", "scripts"]
     assert metadata["tool"]["ty"]["environment"]["python-version"] == "3.12"
+    assert metadata["tool"]["pytest"]["ini_options"]["pythonpath"] == [
+        ".",
+        "src",
+    ]
 
 
 def test_project_contains_the_apache_license() -> None:
