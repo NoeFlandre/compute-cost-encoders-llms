@@ -61,6 +61,12 @@ def test_benchmark_entrypoint_requires_pinned_runtime_and_runs_locked_uv() -> No
     assert script.count("uv run --locked --extra benchmark --no-dev") == 3
 
 
+def test_benchmark_entrypoint_exposes_the_checkout_package_to_uv() -> None:
+    script = read_guardrail("benchmark.sh")
+
+    assert 'PYTHONPATH="$project_root/src:$project_root' in script
+
+
 def test_grid5000_image_pins_llama_cpp_and_exposes_cuda_server() -> None:
     dockerfile = (PROJECT_ROOT / "Dockerfile.grid5000").read_text()
 
