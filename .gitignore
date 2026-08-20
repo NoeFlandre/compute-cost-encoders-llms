@@ -21,6 +21,10 @@ htmlcov/
 .mutmut-cache/
 .mutmut/
 .crap4py/
+.import_linter_cache/
+mutants/
+coverage.lcov
+site/
 
 # Local data and experiment artifacts
 data/

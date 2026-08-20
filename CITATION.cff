@@ -1,6 +1,7 @@
 cff-version: 1.2.0
 title: "compute-cost-encoders-llms"
 type: software
+license: Apache-2.0
 authors:
   - family-names: Flandre
     given-names: Noe

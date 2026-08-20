@@ -3,5 +3,66 @@ name = "compute-cost-encoders-llms"
 version = "0.1.0"
 description = "Compute-cost encoders for large language models"
 readme = "README.md"
+license = { file = "LICENSE" }
 requires-python = ">=3.12"
 dependencies = []
+
+[dependency-groups]
+dev = [
+    "crap4py>=0.1.1",
+    "import-linter>=2.13",
+    "mkdocs-material>=9.7.7",
+    "mutmut>=3.7.0",
+    "pytest<9",
+    "pytest-bdd>=8.1.0",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.16.3",
+    "ty>=0.0.73",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+src = ["src", "tests"]
+extend-exclude = ["build", "dist", "site", "mutants"]
+
+[tool.ruff.lint]
+select = ["B", "C4", "C901", "E", "F", "I", "RUF", "SIM", "UP"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 5
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.ty.environment]
+python-version = "3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests/unit", "tests/acceptance"]
+pythonpath = ["src"]
+addopts = ["--strict-config", "--strict-markers"]
+filterwarnings = [
+    "ignore:No data was collected\\.:coverage.exceptions.CoverageWarning",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["src"]
+
+[tool.coverage.report]
+exclude_also = ["if TYPE_CHECKING:"]
+
+[tool.mutmut]
+source_paths = ["src"]
+also_copy = ["LICENSE", "scripts/"]
+mutate_only_covered_lines = false
+use_git_change_detection = false
+pytest_add_cli_args = ["-q"]
+
+[tool.importlinter]
+root_package = "compute_cost_encoders_llms"
+contracts = [
+    { name = "Package imports remain acyclic", type = "acyclic_siblings", ancestors = ["compute_cost_encoders_llms"], depth = 1 },
+]
