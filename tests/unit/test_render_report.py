@@ -1,0 +1,153 @@
+from __future__ import annotations
+
+import json
+
+import pytest
+from scripts.render_report import (
+    _checkpoint_metrics,
+    _read_json,
+    build_checkpoint_metadata,
+    render_report,
+)
+
+
+def test_build_checkpoint_metadata_is_publishable_and_reproducible() -> None:
+    merged = {
+        "manifest": {
+            "source_commit": "a" * 40,
+            "seed": 7,
+            "protocol": {"repetitions": 64},
+        },
+        "summary": {
+            "models": [
+                {
+                    "model": "encoder",
+                    "latency": {"count": 64, "median": 2.5},
+                    "decision_counts": {"yes": 64, "no": 0},
+                }
+            ]
+        },
+    }
+
+    metadata = build_checkpoint_metadata(
+        merged,
+        config_revision="sha256:config",
+        dataset_revision="made-up-landuse-example-v1",
+        model_revision="b" * 40,
+        artifact_prefix="runs/example",
+    )
+
+    assert metadata == {
+        "artifact_uri": (
+            "hf://buckets/NoeFlandre/compute-cost-encoders-llms/runs/example"
+        ),
+        "complete": True,
+        "config_revision": "sha256:config",
+        "dataset_revision": "made-up-landuse-example-v1",
+        "metrics": {
+            "encoder": {
+                "decision_counts": {"no": 0, "yes": 64},
+                "median_text_to_logprob_ms": 2.5,
+            }
+        },
+        "model_revision": "b" * 40,
+        "seed": 7,
+        "source_commit": "a" * 40,
+        "step": 64,
+    }
+
+
+def test_build_checkpoint_metadata_rejects_empty_artifact_prefix() -> None:
+    with pytest.raises(ValueError, match="artifact prefix"):
+        build_checkpoint_metadata(
+            {"manifest": {}, "summary": {"models": []}},
+            config_revision="sha256:config",
+            dataset_revision="dataset",
+            model_revision="model",
+            artifact_prefix="",
+        )
+
+    valid_shape = {
+        "manifest": {
+            "source_commit": "a" * 40,
+            "seed": 7,
+            "protocol": {"repetitions": 2},
+        },
+        "summary": {"models": []},
+    }
+    with pytest.raises(ValueError, match="non-negative integer"):
+        build_checkpoint_metadata(
+            {**valid_shape, "manifest": {**valid_shape["manifest"], "seed": -1}},
+            config_revision="sha256:config",
+            dataset_revision="dataset",
+            model_revision="model",
+            artifact_prefix="runs/example",
+        )
+    with pytest.raises(ValueError, match="text"):
+        build_checkpoint_metadata(
+            {
+                **valid_shape,
+                "manifest": {**valid_shape["manifest"], "source_commit": ""},
+            },
+            config_revision="sha256:config",
+            dataset_revision="dataset",
+            model_revision="model",
+            artifact_prefix="runs/example",
+        )
+    with pytest.raises(ValueError, match="object"):
+        build_checkpoint_metadata(
+            {"manifest": [], "summary": {}},
+            config_revision="sha256:config",
+            dataset_revision="dataset",
+            model_revision="model",
+            artifact_prefix="runs/example",
+        )
+    with pytest.raises(ValueError, match="model results"):
+        _checkpoint_metrics({"models": []})
+
+
+def test_render_report_writes_latex_and_checkpoint(tmp_path, monkeypatch) -> None:
+    manifest = {
+        "source_commit": "a" * 40,
+        "seed": 7,
+        "llama_cpp_revision": "d" * 40,
+        "protocol": {"warmups": 1, "repetitions": 2, "prompt_cache": False},
+        "example": {"sentence": "A park is land use.", "labels": ["yes", "no"]},
+        "models": {
+            "encoder": {"id": "encoder", "revision": "b" * 40},
+            "llm": {"id": "llm", "revision": "c" * 40},
+        },
+    }
+    summary = {
+        "models": [
+            {
+                "model": model,
+                "latency": {"count": 2, "median": 1.0, "p05": 0.9, "p95": 1.1},
+                "mean_logprobs": {"yes": -0.1, "no": -1.0},
+                "decision_counts": {"yes": 2, "no": 0},
+            }
+            for model in ("encoder", "llm")
+        ]
+    }
+    for backend in ("encoder", "llm"):
+        backend_dir = tmp_path / backend
+        backend_dir.mkdir()
+        (backend_dir / "manifest.json").write_text(json.dumps(manifest))
+        (backend_dir / "summary.json").write_text(json.dumps(summary))
+
+    monkeypatch.setenv("GRID5000_CONFIG_REVISION", "sha256:config")
+    monkeypatch.setenv("GRID5000_DATASET_REVISION", "made-up-landuse-example-v1")
+    monkeypatch.setenv("GRID5000_MODEL_REVISION", "c" * 40)
+    monkeypatch.setenv("GRID5000_ARTIFACT_PREFIX", "runs/example")
+    output = tmp_path / "report.tex"
+    checkpoint = tmp_path / "checkpoint.json"
+
+    render_report(tmp_path / "encoder", tmp_path / "llm", output, checkpoint=checkpoint)
+
+    assert "Binary Land-Use Logprob Benchmark" in output.read_text()
+    assert json.loads(checkpoint.read_text())["complete"] is True
+
+    invalid = tmp_path / "invalid.json"
+    invalid.write_text("[]")
+    with pytest.raises(ValueError, match="not an object"):
+        _read_json(invalid)

@@ -6,4 +6,5 @@ theme:
   name: material
 nav:
   - Home: index.md
+  - Benchmark: benchmark.md
   - Grid’5000: grid5000.md

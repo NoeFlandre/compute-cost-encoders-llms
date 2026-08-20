@@ -1,0 +1,12 @@
+[benchmark]
+encoder_revision = "c5955035435e2bf121cde7f3c8863ef52ff35d82"
+llm_revision = "8a7ee08e8b9bfb857107ecc25a5599d2f38b76f8"
+llama_cpp_revision = "6503355df0eb4f65875012523263c302fe0088c1"
+encoder_model = "jhu-clsp/mmBERT-base"
+llm_model = "ggml-org/Qwen3.6-27B-GGUF"
+llm_filename = "Qwen3.6-27B-Q4_K_M.gguf"
+llama_base_url = "http://127.0.0.1:8080"
+device = "cuda"
+warmups = 8
+repetitions = 64
+seed = 7

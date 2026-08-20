@@ -42,6 +42,31 @@ def test_artifact_publishing_requires_explicit_confirmation() -> None:
     assert "HF_BUCKET_URI" in script
 
 
+def test_benchmark_entrypoint_requires_pinned_runtime_and_runs_locked_uv() -> None:
+    script = read_guardrail("benchmark.sh")
+
+    for required in (
+        "GRID5000_LLM_REVISION",
+        "GRID5000_QWEN_MODEL_PATH",
+        "LLAMA_SERVER_BIN",
+        "uv run --locked",
+        "--n-gpu-layers",
+        "cache_prompt",
+        "hf download",
+        "--checkpoint",
+        "GRID5000_ARTIFACT_PREFIX",
+    ):
+        assert required in script
+
+
+def test_grid5000_image_pins_llama_cpp_and_exposes_cuda_server() -> None:
+    dockerfile = (PROJECT_ROOT / "Dockerfile.grid5000").read_text()
+
+    assert "6503355df0eb4f65875012523263c302fe0088c1" in dockerfile
+    assert "llama-server" in dockerfile
+    assert "CUDA" in dockerfile
+
+
 def test_release_workflow_builds_and_attaches_versioned_artifacts() -> None:
     workflow = (PROJECT_ROOT / ".github" / "workflows" / "release.yml").read_text()
 

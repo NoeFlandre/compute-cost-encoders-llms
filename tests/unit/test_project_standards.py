@@ -57,7 +57,7 @@ def test_mutation_and_crap_limits_are_declared() -> None:
     metadata = load_project_metadata()
     mutmut = metadata["tool"]["mutmut"]
 
-    assert mutmut["source_paths"] == ["src", "scripts/grid5000"]
+    assert mutmut["source_paths"] == ["src", "scripts"]
     assert mutmut["mutate_only_covered_lines"] is False
     assert mutmut["use_git_change_detection"] is False
     assert mutmut["on_dependency_change"] == "rerun"

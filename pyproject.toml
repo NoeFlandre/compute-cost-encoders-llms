@@ -8,6 +8,12 @@ license-files = ["LICENSE"]
 requires-python = ">=3.12"
 dependencies = []
 
+[project.optional-dependencies]
+benchmark = [
+    "torch>=2.6,<3",
+    "transformers>=4.55,<5",
+]
+
 [dependency-groups]
 dev = [
     "crap4py>=0.1.1",
@@ -50,15 +56,18 @@ filterwarnings = [
 
 [tool.coverage.run]
 branch = true
-source = ["src", "scripts/grid5000"]
+source = ["src", "scripts"]
 
 [tool.coverage.report]
 exclude_also = ["if TYPE_CHECKING:"]
 
 [tool.mutmut]
-source_paths = ["src", "scripts/grid5000"]
+source_paths = ["src", "scripts"]
 also_copy = [
+    ".dockerignore",
+    "Dockerfile.grid5000",
     "LICENSE",
+    "configs/",
     "scripts/__init__.py",
     "scripts/qa.sh",
     "docs/",
