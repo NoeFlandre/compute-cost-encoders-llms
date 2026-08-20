@@ -1,0 +1,7 @@
+[project]
+name = "compute-cost-encoders-llms"
+version = "0.1.0"
+description = "Compute-cost encoders for large language models"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []

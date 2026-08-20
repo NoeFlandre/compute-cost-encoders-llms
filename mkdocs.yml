@@ -1,0 +1,6 @@
+site_name: compute-cost-encoders-llms
+site_description: Compute-cost encoders for large language models
+repo_name: NoeFlandre/compute-cost-encoders-llms
+repo_url: https://github.com/NoeFlandre/compute-cost-encoders-llms
+nav:
+  - Home: index.md

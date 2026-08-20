@@ -1,0 +1,38 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv/
+
+# Tool caches and reports
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+.mypy_cache/
+.pyright/
+.ruff_cache/
+.ty/
+.mutmut-cache/
+.mutmut/
+.crap4py/
+
+# Local data and experiment artifacts
+data/
+artifacts/
+outputs/
+runs/
+logs/
+
+# Local configuration
+.env
+.env.*
+!.env.example
+
+# macOS
+.DS_Store
