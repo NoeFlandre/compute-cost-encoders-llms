@@ -22,6 +22,7 @@ def test_submission_can_scope_queue_and_gpu_properties() -> None:
 
     assert "GRID5000_QUEUE" in script
     assert "GRID5000_PROPERTIES" in script
+    assert "GRID5000_TYPE" in script
 
 
 def test_compute_runner_requires_reserved_nodes_and_locked_uv() -> None:

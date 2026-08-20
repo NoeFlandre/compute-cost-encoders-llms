@@ -28,6 +28,10 @@ property_args=()
 if [[ -n "${GRID5000_PROPERTIES:-}" ]]; then
     property_args=(-p "$GRID5000_PROPERTIES")
 fi
+type_args=()
+if [[ -n "${GRID5000_TYPE:-}" ]]; then
+    type_args=(-t "$GRID5000_TYPE")
+fi
 
 usagepolicycheck -t
 trap 'usagepolicycheck -t' EXIT
@@ -37,4 +41,4 @@ if grep -Fq "$job_name" <<<"$active_jobs"; then
     die "a job with run ID '$run_id' is already active; refusing a duplicate"
 fi
 
-oarsub -n "$job_name" -l "$resources" "${queue_args[@]}" "${property_args[@]}" "$@"
+oarsub -n "$job_name" -l "$resources" "${queue_args[@]}" "${property_args[@]}" "${type_args[@]}" "$@"
