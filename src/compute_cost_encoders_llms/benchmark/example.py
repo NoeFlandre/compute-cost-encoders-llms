@@ -3,6 +3,7 @@ from __future__ import annotations
 LANDUSE_SENTENCE = (
     "A public park with grass, trees, and walking paths occupies the parcel."
 )
+LANDUSE_QUESTION = "Is this sentence relevant for a land use description?"
 
 
 def candidate_labels() -> tuple[str, str]:
@@ -16,14 +17,17 @@ def encoder_prompt(mask_token: str) -> str:
 
     if not mask_token:
         raise ValueError("mask_token must not be empty")
-    return f"Sentence: {LANDUSE_SENTENCE}\nLand-use sentence? {mask_token}"
+    return (
+        f'Here is a target sentence: "{LANDUSE_SENTENCE}"\n'
+        f"{LANDUSE_QUESTION} {mask_token}"
+    )
 
 
 def llm_prompt() -> str:
     """Build the next-token prompt for the causal LLM."""
 
     return (
-        "Decide whether the following sentence describes land use. "
-        "Answer with exactly yes or no.\n"
-        f"Sentence: {LANDUSE_SENTENCE}\nAnswer:"
+        f'Here is a target sentence: "{LANDUSE_SENTENCE}"\n'
+        f"{LANDUSE_QUESTION} "
+        "Answer with exactly yes or no.\nAnswer:"
     )

@@ -19,7 +19,7 @@ from .encoder import (
     TorchLike,
     score_transformers_once,
 )
-from .example import LANDUSE_SENTENCE, candidate_labels
+from .example import LANDUSE_QUESTION, LANDUSE_SENTENCE, candidate_labels
 from .llm import LlamaClient, LlamaScore
 from .measurement import MeasurementRecord, choose_decision, measure_repetitions
 from .reporting import build_summary, write_json, write_jsonl
@@ -74,7 +74,11 @@ def build_manifest(
         "run_id": run_id,
         "source_commit": source_commit,
         "seed": config.seed,
-        "example": {"sentence": LANDUSE_SENTENCE, "labels": candidate_labels()},
+        "example": {
+            "sentence": LANDUSE_SENTENCE,
+            "question": LANDUSE_QUESTION,
+            "labels": candidate_labels(),
+        },
         "models": {
             "encoder": {
                 "id": config.encoder_model,

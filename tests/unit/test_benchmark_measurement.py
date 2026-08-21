@@ -183,7 +183,11 @@ def test_render_latex_document_contains_revisions_and_results() -> None:
                 "llm": {"id": "ggml-org/Qwen3.6-27B-GGUF", "revision": "c" * 40},
             },
             "protocol": {"warmups": 8, "repetitions": 64, "prompt_cache": False},
-            "example": {"sentence": "A park is land use.", "labels": ["yes", "no"]},
+            "example": {
+                "sentence": "A park is land use.",
+                "question": "Is this sentence relevant for a land use description?",
+                "labels": ["yes", "no"],
+            },
         },
         {
             "models": [
@@ -201,6 +205,7 @@ def test_render_latex_document_contains_revisions_and_results() -> None:
     assert "jhu-clsp/mmBERT-base" in document
     assert "a" * 40 in document
     assert "A park is land use." in document
+    assert "Is this sentence relevant for a land use description?" in document
     assert "1.200" in document
     assert "mean log" in document
     assert "-0.200" in document

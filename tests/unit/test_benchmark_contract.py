@@ -121,6 +121,20 @@ def test_landuse_example_is_binary_and_prompts_share_the_sentence() -> None:
     assert LANDUSE_SENTENCE in llm_prompt()
 
 
+def test_prompts_ask_relevance_of_the_target_sentence() -> None:
+    assert encoder_prompt("<mask>") == (
+        'Here is a target sentence: "'
+        + LANDUSE_SENTENCE
+        + '"\nIs this sentence relevant for a land use description? <mask>'
+    )
+    assert llm_prompt() == (
+        'Here is a target sentence: "'
+        + LANDUSE_SENTENCE
+        + '"\nIs this sentence relevant for a land use description? '
+        "Answer with exactly yes or no.\nAnswer:"
+    )
+
+
 def test_configuration_requires_immutable_revisions_and_positive_repetitions() -> None:
     config = BenchmarkConfig(
         encoder_revision="c5955035435e2bf121cde7f3c8863ef52ff35d82",

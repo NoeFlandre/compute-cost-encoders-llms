@@ -79,6 +79,7 @@ def test_build_manifest_captures_reproducibility_fields(monkeypatch) -> None:
         "sentence": (
             "A public park with grass, trees, and walking paths occupies the parcel."
         ),
+        "question": "Is this sentence relevant for a land use description?",
         "labels": ("yes", "no"),
     }
     models = cast(dict[str, dict[str, str]], manifest["models"])

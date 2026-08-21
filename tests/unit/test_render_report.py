@@ -151,7 +151,11 @@ def test_render_report_writes_latex_and_checkpoint(tmp_path, monkeypatch) -> Non
         "seed": 7,
         "llama_cpp_revision": "d" * 40,
         "protocol": {"warmups": 1, "repetitions": 2, "prompt_cache": False},
-        "example": {"sentence": "A park is land use.", "labels": ["yes", "no"]},
+        "example": {
+            "sentence": "A park is land use.",
+            "question": "Is this sentence relevant for a land use description?",
+            "labels": ["yes", "no"],
+        },
         "models": {
             "encoder": {"id": "encoder", "revision": "b" * 40},
             "llm": {"id": "llm", "revision": "c" * 40},
@@ -193,6 +197,7 @@ def test_render_report_writes_latex_and_checkpoint(tmp_path, monkeypatch) -> Non
     render_report(tmp_path / "encoder", tmp_path / "llm", output, checkpoint=checkpoint)
 
     assert "Binary Land-Use Logprob Benchmark" in output.read_text()
+    assert "Is this sentence relevant for a land use description?" in output.read_text()
     assert json.loads(checkpoint.read_text())["complete"] is True
 
     invalid = tmp_path / "invalid.json"

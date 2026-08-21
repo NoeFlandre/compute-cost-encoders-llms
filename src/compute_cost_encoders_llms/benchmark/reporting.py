@@ -201,7 +201,8 @@ def render_latex_document(
         + _latex_escape(protocol["repetitions"])
         + " repetitions, prompt cache disabled.\\\\",
         r"\section*{Example}",
-        _latex_escape(example["sentence"]),
+        "Target sentence: ``" + _latex_escape(example["sentence"]) + "''\\\\",
+        "Question: " + _latex_escape(example["question"]),
         r"\section*{Results}",
         r"\begin{tabular}{lrrrrrrr}",
         r"\toprule",
