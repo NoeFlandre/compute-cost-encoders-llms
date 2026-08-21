@@ -4,10 +4,13 @@
 from __future__ import annotations
 
 import argparse
+import itertools
 import json
+import math
 import os
 from collections.abc import Mapping
 from pathlib import Path
+from typing import TypeGuard
 
 from compute_cost_encoders_llms.benchmark.reporting import render_latex_document
 
@@ -38,9 +41,112 @@ def merge_artifacts(
     manifest["run_ids"] = [encoder_manifest.get("run_id"), llm_manifest.get("run_id")]
     encoder_models = encoder_summary.get("models", [])
     llm_models = llm_summary.get("models", [])
-    if not isinstance(encoder_models, list) or not isinstance(llm_models, list):
-        raise ValueError("backend summaries must contain model lists")
-    return {"manifest": manifest, "summary": {"models": encoder_models + llm_models}}
+    validated_encoder = _validated_summary_models(encoder_models, "encoder")
+    validated_llm = _validated_summary_models(llm_models, "llm")
+    return {
+        "manifest": manifest,
+        "summary": {"models": validated_encoder + validated_llm},
+    }
+
+
+def _validated_summary_models(
+    value: object,
+    backend: str,
+) -> list[Mapping[str, object]]:
+    if not isinstance(value, list) or not value:
+        raise ValueError(f"{backend} summary must contain model results")
+    models: list[Mapping[str, object]] = []
+    names: set[str] = set()
+    for item in value:
+        model = _as_mapping(item, f"{backend} model result")
+        name = _text_value(model, "model")
+        if name in names:
+            raise ValueError(f"{backend} summary contains duplicate models")
+        names.add(name)
+        _validate_latency_summary(model)
+        _validate_mean_logprobs(model)
+        _validate_decision_counts(model)
+        models.append(model)
+    return models
+
+
+def _validate_latency_summary(model: Mapping[str, object]) -> None:
+    latency = _mapping_value(model, "latency")
+    _positive_count(latency.get("count"))
+    fields = ("minimum", "median", "p05", "p95", "maximum", "mean", "stdev")
+    values = {
+        field: _validated_latency_value(latency.get(field), field) for field in fields
+    }
+    _validate_latency_order(values)
+
+
+def _positive_count(value: object) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise ValueError("latency count must be a positive integer")
+    return value
+
+
+def _validated_latency_value(value: object, field: str) -> float:
+    if not _is_finite_non_negative(value):
+        raise ValueError(f"latency field is invalid: {field}")
+    return float(value)
+
+
+def _validate_latency_order(values: Mapping[str, float]) -> None:
+    ordered = [
+        values[field] for field in ("minimum", "p05", "median", "p95", "maximum")
+    ]
+    if any(left > right for left, right in itertools.pairwise(ordered)):
+        raise ValueError("latency quantiles are inconsistent")
+    if not values["minimum"] <= values["mean"] <= values["maximum"]:
+        raise ValueError("latency mean is inconsistent")
+
+
+def _validate_mean_logprobs(model: Mapping[str, object]) -> None:
+    scores = _mapping_value(model, "mean_logprobs")
+    _require_binary_keys(scores, "mean_logprobs")
+    for label in ("yes", "no"):
+        if not _is_finite_number(scores[label]):
+            raise ValueError("mean_logprobs must be finite")
+
+
+def _validate_decision_counts(model: Mapping[str, object]) -> None:
+    counts = _mapping_value(model, "decision_counts")
+    values = _validated_decision_counts(counts)
+    latency = _mapping_value(model, "latency")
+    if sum(values) != latency["count"]:
+        raise ValueError("decision_counts must sum to latency count")
+
+
+def _require_binary_keys(values: Mapping[str, object], field: str) -> None:
+    if set(values) != {"yes", "no"}:
+        raise ValueError(f"{field} must contain yes and no")
+
+
+def _validated_decision_counts(counts: Mapping[str, object]) -> tuple[int, int]:
+    _require_binary_keys(counts, "decision_counts")
+    return (
+        _non_negative_count(counts["yes"]),
+        _non_negative_count(counts["no"]),
+    )
+
+
+def _non_negative_count(value: object) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError("decision_counts must be non-negative integers")
+    return value
+
+
+def _is_finite_number(value: object) -> TypeGuard[int | float]:
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(float(value))
+    )
+
+
+def _is_finite_non_negative(value: object) -> TypeGuard[int | float]:
+    return _is_finite_number(value) and float(value) >= 0
 
 
 def build_checkpoint_metadata(

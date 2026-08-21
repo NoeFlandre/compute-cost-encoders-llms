@@ -10,6 +10,7 @@ uv run ty check src tests scripts
 
 # QA_STAGE: tests
 uv run pytest tests/unit --cov=src --cov=scripts --cov-branch --cov-report=term-missing --cov-report=lcov:coverage.lcov
+uv run pytest tests/integration --cov=src --cov=scripts --cov-branch --cov-append --cov-report=term-missing --cov-report=lcov:coverage.lcov
 
 # QA_STAGE: acceptance tests
 uv run pytest tests/acceptance --cov=src --cov=scripts --cov-branch --cov-append --cov-report=term-missing --cov-report=lcov:coverage.lcov

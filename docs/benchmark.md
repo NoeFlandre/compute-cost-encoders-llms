@@ -24,6 +24,12 @@ probabilities are reported for decision inspection but are not treated as
 calibrated, directly comparable probabilities. Timing is compared from input
 text to the available binary logprob result.
 
+When a backend does not expose a timing component, the raw measurement and
+summary contain `null`; zero is never used as a placeholder. Each manifest
+also records the selected dtype, Python/Torch/Transformers versions, CUDA GPU,
+runtime and driver observations, llama.cpp revision, model revisions, source
+commit, configuration digest, and `uv.lock` digest.
+
 ## Completed Grid’5000 run
 
 Run `landuse-logprob-20260820T214923Z` used job `4055299` on

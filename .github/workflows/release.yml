@@ -23,6 +23,16 @@ jobs:
       - name: Install locked dependencies
         run: uv sync --locked
 
+      - name: Package, install, and CLI smoke tests
+        run: |
+          set -euo pipefail
+          smoke_dir="$(mktemp -d)"
+          uv build --out-dir "$smoke_dir"
+          wheel="$(find "$smoke_dir" -name '*.whl' -print -quit)"
+          test -n "$wheel"
+          uv run --isolated --no-project --with "$wheel" python -c 'import compute_cost_encoders_llms'
+          uv run --isolated --no-project --with "$wheel" python -m compute_cost_encoders_llms.benchmark.cli --help
+
       - name: Run ordered QA gauntlet
         run: ./scripts/qa.sh
 

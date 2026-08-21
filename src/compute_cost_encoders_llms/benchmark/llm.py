@@ -5,6 +5,7 @@ import math
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from typing import TypeGuard
 from urllib.request import Request, urlopen
 
 from .example import candidate_labels, llm_prompt
@@ -36,8 +37,8 @@ class LlamaScore:
     """One llama.cpp next-token logprob result and timing components."""
 
     logprobs: dict[str, float]
-    tokenization_ms: float
-    model_ms: float
+    tokenization_ms: float | None
+    model_ms: float | None
     logprob_ms: float
     text_to_logprob_ms: float
     input_tokens: int
@@ -78,7 +79,7 @@ class LlamaClient:
         payload = completion_request_payload(llm_prompt(), seed)
         response = self._request(self._url, payload, self._timeout_s)
         model_ms = _timing_ms(response)
-        tokenization_ms = 0.0
+        tokenization_ms = None
         logprob_start = time.perf_counter_ns()
         logprobs = parse_candidate_logprobs(response, candidate_labels())
         logprob_ms = (time.perf_counter_ns() - logprob_start) / 1_000_000
@@ -93,17 +94,44 @@ class LlamaClient:
         )
 
 
-def _timing_ms(response: Mapping[str, object]) -> float:
+def _timing_ms(response: Mapping[str, object]) -> float | None:
     timings = response.get("timings")
     if not isinstance(timings, Mapping):
-        return 0.0
-    prompt_ms = timings.get("prompt_ms", 0.0)
-    predicted_ms = timings.get("predicted_ms", 0.0)
-    if not isinstance(prompt_ms, (int, float)) or not isinstance(
-        predicted_ms, (int, float)
-    ):
+        return None
+    prompt_ms = _timing_value(timings, "prompt_ms")
+    predicted_ms = _timing_value(timings, "predicted_ms")
+    if prompt_ms is None:
+        return None
+    if predicted_ms is None:
+        return None
+    return _timing_total(prompt_ms, predicted_ms)
+
+
+def _timing_value(timings: Mapping[str, object], field: str) -> float | None:
+    value = timings.get(field)
+    if value is None:
+        return None
+    if not _is_numeric_timing(value):
         raise LlamaResponseError("llama.cpp timings are not numeric")
-    return float(prompt_ms) + float(predicted_ms)
+    numeric = float(value)
+    if not _is_valid_timing(numeric):
+        raise LlamaResponseError("llama.cpp timings are invalid")
+    return numeric
+
+
+def _is_numeric_timing(value: object) -> TypeGuard[int | float]:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _is_valid_timing(value: float) -> bool:
+    return math.isfinite(value) and value >= 0
+
+
+def _timing_total(prompt_ms: float, predicted_ms: float) -> float:
+    total = prompt_ms + predicted_ms
+    if not _is_valid_timing(total):
+        raise LlamaResponseError("llama.cpp timings are invalid")
+    return total
 
 
 def _input_tokens(response: Mapping[str, object]) -> int:
@@ -111,7 +139,11 @@ def _input_tokens(response: Mapping[str, object]) -> int:
     if not isinstance(usage, Mapping):
         return 0
     prompt_tokens = usage.get("prompt_tokens", 0)
-    if not isinstance(prompt_tokens, int) or prompt_tokens < 0:
+    if (
+        isinstance(prompt_tokens, bool)
+        or not isinstance(prompt_tokens, int)
+        or prompt_tokens < 0
+    ):
         raise LlamaResponseError("llama.cpp prompt token count is invalid")
     return prompt_tokens
 

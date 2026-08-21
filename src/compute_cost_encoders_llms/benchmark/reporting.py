@@ -7,6 +7,7 @@ from typing import TypedDict, cast
 
 from .measurement import (
     LatencySummary,
+    MeasurementError,
     MeasurementRecord,
     choose_decision,
     summarize_latencies,
@@ -17,8 +18,8 @@ from .measurement import (
 class ModelSummary(TypedDict):
     model: str
     latency: LatencySummary
-    tokenization: LatencySummary
-    model_time: LatencySummary
+    tokenization: LatencySummary | None
+    model_time: LatencySummary | None
     logprob_time: LatencySummary
     mean_logprobs: dict[str, float]
     decision_counts: dict[str, int]
@@ -37,46 +38,72 @@ def json_line(record: Mapping[str, object]) -> str:
 def build_summary(records: Iterable[Mapping[str, object]]) -> SummaryDocument:
     """Group validated measurements into deterministic model summaries."""
 
+    grouped = _group_records(records)
+    return {
+        "models": [_model_summary(model, grouped[model]) for model in sorted(grouped)]
+    }
+
+
+def _group_records(
+    records: Iterable[Mapping[str, object]],
+) -> dict[str, list[MeasurementRecord]]:
     grouped: dict[str, list[MeasurementRecord]] = {}
+    identities: set[tuple[str, int]] = set()
     for record in records:
         validated = validate_measurement(record)
         model = str(validated["model"])
+        identity = (model, validated["repetition"])
+        if identity in identities:
+            raise MeasurementError("duplicate measurement repetition")
+        identities.add(identity)
         grouped.setdefault(model, []).append(validated)
-    models: list[ModelSummary] = []
-    for model in sorted(grouped):
-        model_records = grouped[model]
-        decisions = {"yes": 0, "no": 0}
-        latencies: list[float] = []
-        tokenization: list[float] = []
-        model_times: list[float] = []
-        logprob_times: list[float] = []
-        yes_scores: list[float] = []
-        no_scores: list[float] = []
-        for record in model_records:
-            decision = choose_decision(record["logprobs"])
-            decisions[decision] += 1
-            latencies.append(float(record["text_to_logprob_ms"]))
-            tokenization.append(float(record["tokenization_ms"]))
-            model_times.append(float(record["model_ms"]))
-            logprob_times.append(float(record["logprob_ms"]))
-            scores = record["logprobs"]
-            yes_scores.append(float(scores["yes"]))
-            no_scores.append(float(scores["no"]))
-        models.append(
-            {
-                "model": model,
-                "latency": summarize_latencies(latencies),
-                "tokenization": summarize_latencies(tokenization),
-                "model_time": summarize_latencies(model_times),
-                "logprob_time": summarize_latencies(logprob_times),
-                "mean_logprobs": {
-                    "yes": sum(yes_scores) / len(yes_scores),
-                    "no": sum(no_scores) / len(no_scores),
-                },
-                "decision_counts": decisions,
-            }
-        )
-    return {"models": models}
+    if not grouped:
+        raise MeasurementError("no measurements")
+    return grouped
+
+
+def _model_summary(
+    model: str,
+    records: list[MeasurementRecord],
+) -> ModelSummary:
+    decisions = {"yes": 0, "no": 0}
+    for record in records:
+        decisions[choose_decision(record["logprobs"])] += 1
+    return {
+        "model": model,
+        "latency": summarize_latencies(_timing_values(records, "text_to_logprob_ms")),
+        "tokenization": _optional_latency_summary(
+            _timing_values(records, "tokenization_ms")
+        ),
+        "model_time": _optional_latency_summary(_timing_values(records, "model_ms")),
+        "logprob_time": summarize_latencies(_timing_values(records, "logprob_ms")),
+        "mean_logprobs": {
+            "yes": _mean_score(records, "yes"),
+            "no": _mean_score(records, "no"),
+        },
+        "decision_counts": decisions,
+    }
+
+
+def _timing_values(
+    records: list[MeasurementRecord],
+    field: str,
+) -> list[float]:
+    return [
+        float(cast(int | float, value))
+        for record in records
+        if (value := cast(Mapping[str, object], record)[field]) is not None
+    ]
+
+
+def _mean_score(records: list[MeasurementRecord], label: str) -> float:
+    return sum(float(record["logprobs"][label]) for record in records) / len(records)
+
+
+def _optional_latency_summary(
+    values: list[float],
+) -> LatencySummary | None:
+    return summarize_latencies(values) if values else None
 
 
 def write_json(path: Path, document: Mapping[str, object]) -> None:

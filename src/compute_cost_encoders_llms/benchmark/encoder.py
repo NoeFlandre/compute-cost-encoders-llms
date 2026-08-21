@@ -3,10 +3,44 @@ from __future__ import annotations
 import math
 import time
 from collections.abc import Mapping, Sequence
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
-from typing import Any
+from typing import Protocol, cast
 
 from .example import candidate_labels, encoder_prompt
+
+
+class TensorLike(Protocol):
+    def __getitem__(self, index: int | slice) -> TensorLike: ...
+
+    def to(self, device: str) -> TensorLike: ...
+
+    def tolist(self) -> object: ...
+
+    def detach(self) -> TensorLike: ...
+
+    def float(self) -> TensorLike: ...
+
+    def cpu(self) -> TensorLike: ...
+
+
+class TokenizerLike(Protocol):
+    mask_token: str
+    mask_token_id: int
+
+    def __call__(self, text: str, **kwargs: object) -> Mapping[str, object]: ...
+
+
+class ModelLike(Protocol):
+    def __call__(self, **inputs: object) -> ModelOutputLike: ...
+
+
+class ModelOutputLike(Protocol):
+    logits: object
+
+
+class TorchLike(Protocol):
+    def inference_mode(self) -> AbstractContextManager[object]: ...
 
 
 def validate_single_token_candidates(
@@ -85,9 +119,9 @@ class EncoderScore:
 
 
 def score_transformers_once(
-    tokenizer: Any,
-    model: Any,
-    torch_module: Any,
+    tokenizer: TokenizerLike,
+    model: ModelLike,
+    torch_module: TorchLike,
     device: str,
 ) -> EncoderScore:
     """Score yes/no at one masked position using a Transformers model."""
@@ -100,15 +134,19 @@ def score_transformers_once(
         add_special_tokens=True,
     )
     candidate_tokens = {
-        label: tokenizer(label, add_special_tokens=False)["input_ids"]
+        label: cast(
+            Sequence[int], tokenizer(label, add_special_tokens=False)["input_ids"]
+        )
         for label in candidate_labels()
     }
     tokenization_ms = (time.perf_counter_ns() - token_start) / 1_000_000
-    input_ids = encoded["input_ids"]
-    input_id_list = input_ids[0].tolist()
+    input_ids = cast(TensorLike, encoded["input_ids"])
+    input_id_list = cast(list[int], input_ids[0].tolist())
     position = mask_position(input_id_list, tokenizer.mask_token_id)
     candidate_ids = validate_single_token_candidates(candidate_tokens)
-    model_inputs = {name: value.to(device) for name, value in encoded.items()}
+    model_inputs = {
+        name: cast(TensorLike, value).to(device) for name, value in encoded.items()
+    }
 
     _synchronize(torch_module)
     model_start = time.perf_counter_ns()
@@ -118,7 +156,8 @@ def score_transformers_once(
     model_ms = (time.perf_counter_ns() - model_start) / 1_000_000
 
     logprob_start = time.perf_counter_ns()
-    logits = outputs.logits[0][position].detach().float().cpu().tolist()
+    logits = cast(TensorLike, outputs.logits)[0][position]
+    logits = cast(Sequence[float], logits.detach().float().cpu().tolist())
     logprobs = candidate_logprobs(logits, candidate_ids)
     logprob_ms = (time.perf_counter_ns() - logprob_start) / 1_000_000
     text_to_logprob_ms = (time.perf_counter_ns() - total_start) / 1_000_000
@@ -132,7 +171,7 @@ def score_transformers_once(
     )
 
 
-def _synchronize(torch_module: Any) -> None:
+def _synchronize(torch_module: object) -> None:
     cuda = getattr(torch_module, "cuda", None)
     synchronize = getattr(cuda, "synchronize", None)
     if callable(synchronize):

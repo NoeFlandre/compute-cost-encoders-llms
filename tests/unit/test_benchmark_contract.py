@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import math
+import sys
 from types import SimpleNamespace
-from typing import cast
+from urllib.request import Request
 
 import pytest
 
+import compute_cost_encoders_llms.benchmark.encoder as encoder_module
 import compute_cost_encoders_llms.benchmark.llm as llm_module
 from compute_cost_encoders_llms.benchmark.config import BenchmarkConfig, ConfigError
 from compute_cost_encoders_llms.benchmark.encoder import (
@@ -35,11 +37,13 @@ from compute_cost_encoders_llms.benchmark.llm import (
 class FakeTensor:
     def __init__(self, value):
         self.value = value
+        self.to_devices: list[str] = []
 
     def __getitem__(self, index):
         return FakeTensor(self.value[index])
 
     def to(self, _device):
+        self.to_devices.append(_device)
         return self
 
     def tolist(self):
@@ -59,13 +63,20 @@ class FakeTokenizer:
     mask_token = "<mask>"
     mask_token_id = 99
 
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict[str, object]]] = []
+        self.last_encoded: dict[str, FakeTensor] | None = None
+
     def __call__(self, text, **_kwargs):
+        self.calls.append((text, dict(_kwargs)))
         if text in ("yes", "no"):
             return {"input_ids": [1 if text == "yes" else 2]}
-        return {
+        encoded = {
             "input_ids": FakeTensor([[10, 99, 11]]),
             "attention_mask": FakeTensor([[1, 1, 1]]),
         }
+        self.last_encoded = encoded
+        return encoded
 
 
 class FakeTorch:
@@ -86,6 +97,17 @@ class FakeModel:
         return SimpleNamespace(
             logits=FakeTensor([[[0.0, 0.0, 0.0], [0.0, 2.0, -1.0], [0.0, 0.0, 0.0]]])
         )
+
+
+class JsonResponse:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def read(self):
+        return b'{"ok": true}'
 
 
 def test_landuse_example_is_binary_and_prompts_share_the_sentence() -> None:
@@ -109,6 +131,16 @@ def test_configuration_requires_immutable_revisions_and_positive_repetitions() -
     )
 
     assert config.repetitions == 4
+
+    boundary = BenchmarkConfig(
+        encoder_revision=config.encoder_revision,
+        llm_revision=config.llm_revision,
+        llama_cpp_revision=config.llama_cpp_revision,
+        repetitions=1,
+        warmups=0,
+    )
+    assert boundary.repetitions == 1
+    assert boundary.warmups == 0
 
     with pytest.raises(ConfigError, match="encoder_revision"):
         BenchmarkConfig(
@@ -178,6 +210,7 @@ def test_candidate_logprobs_returns_log_softmax_scores() -> None:
     normalizer = math.log(sum(math.exp(value) for value in (0.0, 2.0, -1.0)))
     assert scores["yes"] == pytest.approx(2.0 - normalizer)
     assert scores["no"] == pytest.approx(-1.0 - normalizer)
+    assert candidate_logprobs([1.0], {"yes": 0})["yes"] == 0.0
 
 
 def test_candidate_logprobs_rejects_empty_nonfinite_and_out_of_range_inputs() -> None:
@@ -189,12 +222,49 @@ def test_candidate_logprobs_rejects_empty_nonfinite_and_out_of_range_inputs() ->
         candidate_logprobs([0.0], {"yes": 1, "no": 0})
 
 
-def test_score_transformers_once_returns_masked_scores_and_timings() -> None:
-    score = score_transformers_once(FakeTokenizer(), FakeModel(), FakeTorch(), "cuda")
+def test_score_transformers_once_returns_masked_scores_and_timings(monkeypatch) -> None:
+    synchronize_calls: list[str] = []
+    tokenizer = FakeTokenizer()
+
+    class SynchronizedTorch(FakeTorch):
+        def __init__(self) -> None:
+            self.cuda = SimpleNamespace(
+                synchronize=lambda: synchronize_calls.append("sync")
+            )
+
+    ticks = iter(
+        (
+            10_000_000,
+            11_000_000,
+            12_000_000,
+            13_000_000,
+            14_000_000,
+            15_000_000,
+            16_000_000,
+        )
+    )
+    monkeypatch.setattr(encoder_module.time, "perf_counter_ns", lambda: next(ticks))
+    score = score_transformers_once(tokenizer, FakeModel(), SynchronizedTorch(), "cuda")
 
     assert score.input_tokens == 3
     assert score.logprobs["yes"] > score.logprobs["no"]
-    assert score.text_to_logprob_ms >= score.model_ms
+    assert score.tokenization_ms == 1.0
+    assert score.model_ms == 1.0
+    assert score.logprob_ms == 1.0
+    assert score.text_to_logprob_ms == 6.0
+    assert synchronize_calls == ["sync", "sync"]
+    assert tokenizer.calls == [
+        (
+            encoder_prompt(tokenizer.mask_token),
+            {"return_tensors": "pt", "add_special_tokens": True},
+        ),
+        ("yes", {"add_special_tokens": False}),
+        ("no", {"add_special_tokens": False}),
+    ]
+    assert tokenizer.last_encoded is not None
+    assert all(
+        tensor.to_devices == ["cuda"] for tensor in tokenizer.last_encoded.values()
+    )
 
 
 def test_parse_llama_completion_reads_candidate_logprobs() -> None:
@@ -318,12 +388,32 @@ def test_parse_llama_rejects_missing_probability_shapes(payload) -> None:
 
 
 def test_llama_response_helpers_reject_malformed_values(monkeypatch) -> None:
-    assert _timing_ms({}) == 0.0
+    assert _timing_ms({}) is None
+    assert _timing_ms({"timings": {"prompt_ms": 1.0}}) is None
+    assert _timing_ms({"timings": {"predicted_ms": 1.0}}) is None
+    assert _timing_ms({"timings": {"prompt_ms": 0.0, "predicted_ms": 0.0}}) == 0.0
     with pytest.raises(LlamaResponseError, match="timings are not numeric"):
         _timing_ms({"timings": {"prompt_ms": "slow"}})
+    with pytest.raises(LlamaResponseError, match="timings are not numeric"):
+        _timing_ms({"timings": {"prompt_ms": True}})
+    with pytest.raises(LlamaResponseError, match="timings are invalid"):
+        _timing_ms({"timings": {"prompt_ms": -1.0, "predicted_ms": 1.0}})
+    with pytest.raises(LlamaResponseError, match="timings are invalid"):
+        _timing_ms(
+            {
+                "timings": {
+                    "prompt_ms": sys.float_info.max,
+                    "predicted_ms": sys.float_info.max,
+                }
+            }
+        )
     assert _input_tokens({}) == 0
+    assert _input_tokens({"usage": {}}) == 0
+    assert _input_tokens({"usage": {"prompt_tokens": 0}}) == 0
     with pytest.raises(LlamaResponseError, match="token count is invalid"):
         _input_tokens({"usage": {"prompt_tokens": -1}})
+    with pytest.raises(LlamaResponseError, match="token count is invalid"):
+        _input_tokens({"usage": {"prompt_tokens": True}})
     assert _with_top_logprobs([{"token": "yes"}]) == [{"token": "yes"}]
     with pytest.raises(LlamaResponseError, match="entry is not an object"):
         _with_top_logprobs([None])
@@ -352,7 +442,27 @@ def test_llama_response_helpers_reject_malformed_values(monkeypatch) -> None:
         _post_json("http://example.test", {"x": 1}, 1.0)
 
 
-def test_llama_client_returns_scores_and_server_timing() -> None:
+def test_post_json_preserves_request_contract(monkeypatch) -> None:
+    captured_request: Request | None = None
+    captured_timeout: float | None = None
+
+    def open_request(request: Request, timeout: float) -> JsonResponse:
+        nonlocal captured_request, captured_timeout
+        captured_request = request
+        captured_timeout = timeout
+        return JsonResponse()
+
+    monkeypatch.setattr(llm_module, "urlopen", open_request)
+    assert _post_json("http://example.test", {"x": 1}, 1.0) == {"ok": True}
+    assert captured_request is not None
+    request = captured_request
+    assert request.full_url == "http://example.test"
+    assert request.data == b'{"x": 1}'
+    assert request.get_header("Content-type") == "application/json"
+    assert captured_timeout == 1.0
+
+
+def test_llama_client_returns_scores_and_server_timing(monkeypatch) -> None:
     requests = []
 
     def request(url, payload, timeout):
@@ -373,10 +483,15 @@ def test_llama_client_returns_scores_and_server_timing() -> None:
             "usage": {"prompt_tokens": 18},
         }
 
+    ticks = iter((10_000_000, 11_000_000, 12_000_000, 13_000_000))
+    monkeypatch.setattr(llm_module.time, "perf_counter_ns", lambda: next(ticks))
     score = LlamaClient("http://127.0.0.1:8080", request=request).score(seed=7)
 
     assert score.logprobs == {"yes": -0.25, "no": -1.25}
+    assert score.tokenization_ms is None
     assert score.model_ms == pytest.approx(2.5)
+    assert score.logprob_ms == 1.0
+    assert score.text_to_logprob_ms == 3.0
     assert score.input_tokens == 18
     assert requests[0][0] == "http://127.0.0.1:8080/completion"
 
@@ -384,8 +499,41 @@ def test_llama_client_returns_scores_and_server_timing() -> None:
 def test_completion_request_uses_one_prediction_without_prompt_cache() -> None:
     payload = completion_request_payload("Answer:", seed=7)
 
-    assert payload["prompt"] == "Answer:"
-    assert payload["n_predict"] == 1
-    assert payload["cache_prompt"] is False
-    assert payload["temperature"] == 0.0
-    assert cast(int, payload["n_probs"]) >= 2
+    assert payload == {
+        "prompt": "Answer:",
+        "n_predict": 1,
+        "temperature": 0.0,
+        "top_k": 0,
+        "top_p": 1.0,
+        "seed": 7,
+        "cache_prompt": False,
+        "n_probs": 32,
+        "timings_per_token": True,
+        "stream": False,
+    }
+
+
+def test_llama_score_marks_unmeasured_timings_as_none() -> None:
+    client = LlamaClient(
+        "http://test",
+        request=lambda _url, _payload, _timeout: {
+            "completion_probabilities": [
+                {
+                    "probs": [
+                        {
+                            "token": "yes",
+                            "logprob": -0.25,
+                            "top_logprobs": [{"token": "no", "logprob": -1.25}],
+                        }
+                    ]
+                }
+            ]
+        },
+    )
+
+    score = client.score(seed=7)
+
+    assert score.tokenization_ms is None
+    assert score.model_ms is None
+    assert score.logprob_ms >= 0
+    assert score.text_to_logprob_ms >= score.logprob_ms

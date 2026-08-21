@@ -8,7 +8,7 @@ import json
 import sys
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import cast
 
 PROJECT_BUCKET_PREFIX = "hf://buckets/NoeFlandre/compute-cost-encoders-llms/"
 REQUIRED_TEXT_FIELDS = (
@@ -20,22 +20,25 @@ REQUIRED_TEXT_FIELDS = (
 )
 
 
-def _required_text_errors(metadata: Mapping[str, Any]) -> list[str]:
-    return [
-        f"{field} is required"
-        for field in REQUIRED_TEXT_FIELDS
-        if not isinstance(metadata.get(field), str) or not metadata[field].strip()
-    ]
+def _required_text_errors(metadata: Mapping[str, object]) -> list[str]:
+    errors: list[str] = []
+    for field in REQUIRED_TEXT_FIELDS:
+        value = metadata.get(field)
+        if not isinstance(value, str) or not value.strip():
+            errors.append(f"{field} is required")
+    return errors
 
 
-def _non_negative_integer_error(metadata: Mapping[str, Any], field: str) -> str | None:
+def _non_negative_integer_error(
+    metadata: Mapping[str, object], field: str
+) -> str | None:
     value = metadata.get(field)
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         return f"{field} must be a non-negative integer"
     return None
 
 
-def _integer_errors(metadata: Mapping[str, Any]) -> list[str]:
+def _integer_errors(metadata: Mapping[str, object]) -> list[str]:
     errors = []
     for field in ("seed", "step"):
         error = _non_negative_integer_error(metadata, field)
@@ -44,20 +47,20 @@ def _integer_errors(metadata: Mapping[str, Any]) -> list[str]:
     return errors
 
 
-def _metrics_error(metadata: Mapping[str, Any]) -> str | None:
+def _metrics_error(metadata: Mapping[str, object]) -> str | None:
     metrics = metadata.get("metrics")
     if not isinstance(metrics, Mapping) or not metrics:
         return "metrics must be a non-empty object"
     return None
 
 
-def _complete_error(metadata: Mapping[str, Any]) -> str | None:
+def _complete_error(metadata: Mapping[str, object]) -> str | None:
     if metadata.get("complete") is not True:
         return "complete must be true"
     return None
 
 
-def _artifact_uri_error(metadata: Mapping[str, Any]) -> str | None:
+def _artifact_uri_error(metadata: Mapping[str, object]) -> str | None:
     artifact_uri = metadata.get("artifact_uri")
     if not isinstance(artifact_uri, str) or not artifact_uri:
         return None
@@ -66,7 +69,7 @@ def _artifact_uri_error(metadata: Mapping[str, Any]) -> str | None:
     return "artifact_uri must use the project Hugging Face bucket"
 
 
-def _integrity_errors(metadata: Mapping[str, Any]) -> list[str]:
+def _integrity_errors(metadata: Mapping[str, object]) -> list[str]:
     errors = []
     for error in (
         _metrics_error(metadata),
@@ -78,15 +81,16 @@ def _integrity_errors(metadata: Mapping[str, Any]) -> list[str]:
     return errors
 
 
-def validate_metadata(metadata: Any) -> list[str]:
+def validate_metadata(metadata: object) -> list[str]:
     """Return deterministic validation errors for checkpoint metadata."""
     if not isinstance(metadata, Mapping):
         return ["metadata must be a JSON object"]
 
+    typed_metadata = cast(Mapping[str, object], metadata)
     return (
-        _required_text_errors(metadata)
-        + _integer_errors(metadata)
-        + _integrity_errors(metadata)
+        _required_text_errors(typed_metadata)
+        + _integer_errors(typed_metadata)
+        + _integrity_errors(typed_metadata)
     )
 
 

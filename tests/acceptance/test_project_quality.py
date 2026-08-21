@@ -39,3 +39,18 @@ def assert_qa_stage_order(qa_stages: list[str]) -> None:
         "CRAP",
         "mutation tests",
     ]
+
+
+def test_qa_runs_the_integration_test_layer() -> None:
+    qa_script = (PROJECT_ROOT / "scripts" / "qa.sh").read_text()
+
+    assert "pytest tests/integration" in qa_script
+
+
+def test_ci_declares_package_install_and_cli_smoke_tests() -> None:
+    for workflow_name in ("qa.yml", "release.yml"):
+        workflow = (PROJECT_ROOT / ".github" / "workflows" / workflow_name).read_text()
+        assert "Package, install, and CLI smoke tests" in workflow
+        assert "uv build --out-dir" in workflow
+        assert "--isolated --no-project --with" in workflow
+        assert "benchmark.cli --help" in workflow

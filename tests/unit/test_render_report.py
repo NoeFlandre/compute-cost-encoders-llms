@@ -5,8 +5,11 @@ import json
 import pytest
 from scripts.render_report import (
     _checkpoint_metrics,
+    _non_negative_count,
+    _positive_count,
     _read_json,
     build_checkpoint_metadata,
+    merge_artifacts,
     render_report,
 )
 
@@ -34,7 +37,7 @@ def test_build_checkpoint_metadata_is_publishable_and_reproducible() -> None:
         config_revision="sha256:config",
         dataset_revision="made-up-landuse-example-v1",
         model_revision="b" * 40,
-        artifact_prefix="runs/example",
+        artifact_prefix="//runs/example//",
     )
 
     assert metadata == {
@@ -66,6 +69,14 @@ def test_build_checkpoint_metadata_rejects_empty_artifact_prefix() -> None:
             model_revision="model",
             artifact_prefix="",
         )
+    with pytest.raises(ValueError, match="artifact prefix"):
+        build_checkpoint_metadata(
+            {"manifest": {}, "summary": {"models": []}},
+            config_revision="sha256:config",
+            dataset_revision="dataset",
+            model_revision="model",
+            artifact_prefix="../runs/example",
+        )
 
     valid_shape = {
         "manifest": {
@@ -83,6 +94,34 @@ def test_build_checkpoint_metadata_rejects_empty_artifact_prefix() -> None:
             model_revision="model",
             artifact_prefix="runs/example",
         )
+    with pytest.raises(ValueError, match="non-negative integer"):
+        build_checkpoint_metadata(
+            {**valid_shape, "manifest": {**valid_shape["manifest"], "seed": True}},
+            config_revision="sha256:config",
+            dataset_revision="dataset",
+            model_revision="model",
+            artifact_prefix="runs/example",
+        )
+    zero_seed = build_checkpoint_metadata(
+        {
+            **valid_shape,
+            "manifest": {**valid_shape["manifest"], "seed": 0},
+            "summary": {
+                "models": [
+                    {
+                        "model": "encoder",
+                        "latency": {"median": 1.0},
+                        "decision_counts": {"yes": 1, "no": 0},
+                    }
+                ]
+            },
+        },
+        config_revision="sha256:config",
+        dataset_revision="dataset",
+        model_revision="model",
+        artifact_prefix="runs/example",
+    )
+    assert zero_seed["seed"] == 0
     with pytest.raises(ValueError, match="text"):
         build_checkpoint_metadata(
             {
@@ -122,7 +161,16 @@ def test_render_report_writes_latex_and_checkpoint(tmp_path, monkeypatch) -> Non
         "models": [
             {
                 "model": model,
-                "latency": {"count": 2, "median": 1.0, "p05": 0.9, "p95": 1.1},
+                "latency": {
+                    "count": 2,
+                    "minimum": 0.9,
+                    "median": 1.0,
+                    "p05": 0.9,
+                    "p95": 1.1,
+                    "maximum": 1.1,
+                    "mean": 1.0,
+                    "stdev": 0.1,
+                },
                 "mean_logprobs": {"yes": -0.1, "no": -1.0},
                 "decision_counts": {"yes": 2, "no": 0},
             }
@@ -151,3 +199,147 @@ def test_render_report_writes_latex_and_checkpoint(tmp_path, monkeypatch) -> Non
     invalid.write_text("[]")
     with pytest.raises(ValueError, match="not an object"):
         _read_json(invalid)
+
+
+def test_merge_artifacts_rejects_incomplete_backend_summaries() -> None:
+    manifest = {"source_commit": "a" * 40, "example": {"sentence": "x"}}
+    complete = {
+        "models": [
+            {
+                "model": "encoder",
+                "latency": {"count": 1, "median": 1.0},
+                "decision_counts": {"yes": 1, "no": 0},
+            }
+        ]
+    }
+
+    with pytest.raises(ValueError, match="model results"):
+        merge_artifacts(manifest, manifest, {"models": []}, complete)
+    with pytest.raises(ValueError, match="latency"):
+        merge_artifacts(
+            manifest,
+            manifest,
+            {"models": [{"model": "encoder"}]},
+            complete,
+        )
+    duplicate_model = {
+        **complete["models"][0],
+        "latency": {
+            "count": 1,
+            "minimum": 1.0,
+            "median": 1.0,
+            "p05": 1.0,
+            "p95": 1.0,
+            "maximum": 1.0,
+            "mean": 1.0,
+            "stdev": 0.0,
+        },
+        "mean_logprobs": {"yes": -0.1, "no": -1.0},
+    }
+    with pytest.raises(ValueError, match="duplicate"):
+        merge_artifacts(
+            manifest,
+            manifest,
+            {"models": [duplicate_model, duplicate_model]},
+            complete,
+        )
+
+
+def test_merge_artifacts_rejects_inconsistent_latency_order() -> None:
+    manifest = {"source_commit": "a" * 40, "example": {"sentence": "x"}}
+    model = {
+        "model": "encoder",
+        "latency": {
+            "count": 2,
+            "minimum": 1.0,
+            "median": 2.0,
+            "p05": 3.0,
+            "p95": 4.0,
+            "maximum": 5.0,
+            "mean": 3.0,
+            "stdev": 1.0,
+        },
+        "mean_logprobs": {"yes": -0.1, "no": -1.0},
+        "decision_counts": {"yes": 2, "no": 0},
+    }
+
+    with pytest.raises(ValueError, match="quantiles"):
+        merge_artifacts(
+            manifest,
+            manifest,
+            {"models": [model]},
+            {"models": [{**model, "model": "llm"}]},
+        )
+
+    valid_order = {
+        **model,
+        "latency": {**model["latency"], "p05": 1.5, "mean": 3.0},
+    }
+    invalid_mean = {
+        **valid_order,
+        "latency": {**valid_order["latency"], "mean": 10.0},
+    }
+    with pytest.raises(ValueError, match="mean"):
+        merge_artifacts(
+            manifest,
+            manifest,
+            {"models": [invalid_mean]},
+            {"models": [{**valid_order, "model": "llm"}]},
+        )
+
+    invalid_score = {
+        **valid_order,
+        "mean_logprobs": {"yes": "1", "no": -1.0},
+    }
+    with pytest.raises(ValueError, match="mean_logprobs"):
+        merge_artifacts(
+            manifest,
+            manifest,
+            {"models": [invalid_score]},
+            {"models": [{**valid_order, "model": "llm"}]},
+        )
+
+    negative_latency = {
+        **valid_order,
+        "latency": {**valid_order["latency"], "minimum": -1.0},
+    }
+    with pytest.raises(ValueError, match="latency field"):
+        merge_artifacts(
+            manifest,
+            manifest,
+            {"models": [negative_latency]},
+            {"models": [{**valid_order, "model": "llm"}]},
+        )
+
+    equal_values = {
+        **model,
+        "latency": {
+            "count": 2,
+            "minimum": 1.0,
+            "median": 1.0,
+            "p05": 1.0,
+            "p95": 1.0,
+            "maximum": 1.0,
+            "mean": 1.0,
+            "stdev": 1.0,
+        },
+    }
+    equal_values["decision_counts"] = {"yes": 2, "no": 0}
+    assert merge_artifacts(
+        manifest,
+        manifest,
+        {"models": [equal_values]},
+        {"models": [{**equal_values, "model": "llm"}]},
+    )["summary"]
+
+
+@pytest.mark.parametrize("value", [True, 0, "1"])
+def test_positive_latency_count_rejects_invalid_values(value: object) -> None:
+    with pytest.raises(ValueError, match="positive integer"):
+        _positive_count(value)
+
+
+@pytest.mark.parametrize("value", [True, -1, "1"])
+def test_decision_count_rejects_invalid_values(value: object) -> None:
+    with pytest.raises(ValueError, match="non-negative integers"):
+        _non_negative_count(value)

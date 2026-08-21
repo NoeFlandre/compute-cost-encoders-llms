@@ -5,7 +5,7 @@ import statistics
 import time
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
-from typing import NotRequired, TypedDict, cast
+from typing import NotRequired, TypedDict, TypeGuard, cast
 
 
 class MeasurementError(ValueError):
@@ -15,8 +15,8 @@ class MeasurementError(ValueError):
 class MeasurementRecord(TypedDict):
     model: str
     repetition: int
-    tokenization_ms: float
-    model_ms: float
+    tokenization_ms: float | None
+    model_ms: float | None
     logprob_ms: float
     text_to_logprob_ms: float
     logprobs: dict[str, float]
@@ -68,6 +68,8 @@ _TIMING_FIELDS = (
     "logprob_ms",
     "text_to_logprob_ms",
 )
+_OPTIONAL_TIMING_FIELDS = ("tokenization_ms", "model_ms")
+_REQUIRED_TIMING_FIELDS = ("logprob_ms", "text_to_logprob_ms")
 
 
 def validate_measurement(record: Mapping[str, object]) -> MeasurementRecord:
@@ -77,6 +79,7 @@ def validate_measurement(record: Mapping[str, object]) -> MeasurementRecord:
     _validate_identity(record)
     _validate_timings(record)
     _validate_logprobs(record)
+    _validate_optional_fields(record)
     return cast(MeasurementRecord, dict(record))
 
 
@@ -87,25 +90,87 @@ def _require_measurement_fields(record: Mapping[str, object]) -> None:
 
 
 def _validate_identity(record: Mapping[str, object]) -> None:
-    if not isinstance(record["model"], str) or not record["model"]:
+    if not _is_non_empty_text(record["model"]):
         raise MeasurementError("model must be non-empty")
-    if not isinstance(record["repetition"], int) or record["repetition"] < 0:
+    if not _is_non_negative_integer(record["repetition"]):
         raise MeasurementError("repetition must be non-negative")
+
+
+def _is_non_empty_text(value: object) -> bool:
+    return isinstance(value, str) and bool(value)
+
+
+def _is_non_negative_integer(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
 
 
 def _validate_timings(record: Mapping[str, object]) -> None:
     for field in _TIMING_FIELDS:
+        _validate_timing_field(field, record[field])
+    _validate_total_covers_components(record)
+
+
+def _validate_timing_field(field: str, value: object) -> None:
+    if value is None and field in _OPTIONAL_TIMING_FIELDS:
+        return
+    if not _is_finite_number(value):
+        raise MeasurementError(f"{field} must be finite")
+    if float(value) < 0:
+        raise MeasurementError(f"{field} must be non-negative")
+
+
+def _is_finite_number(value: object) -> TypeGuard[int | float]:
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(float(value))
+    )
+
+
+def _validate_total_covers_components(record: Mapping[str, object]) -> None:
+    total = _required_float(record["text_to_logprob_ms"])
+    fields = _REQUIRED_TIMING_FIELDS[:-1] + _OPTIONAL_TIMING_FIELDS
+    for field in fields:
         value = record[field]
-        if not isinstance(value, (int, float)) or not math.isfinite(float(value)):
-            raise MeasurementError(f"{field} must be finite")
-        if float(value) < 0:
-            raise MeasurementError(f"{field} must be non-negative")
+        if value is not None and total < _required_float(value):
+            raise MeasurementError("text_to_logprob_ms must cover component timings")
+
+
+def _required_float(value: object) -> float:
+    if not _is_finite_number(value):
+        raise MeasurementError("timing must be finite")
+    return float(value)
 
 
 def _validate_logprobs(record: Mapping[str, object]) -> None:
     logprobs = record["logprobs"]
     if not isinstance(logprobs, Mapping) or set(logprobs) != {"yes", "no"}:
         raise MeasurementError("logprobs must contain yes and no")
+    if any(not _is_finite_number(logprobs[label]) for label in ("yes", "no")):
+        raise MeasurementError("logprobs must be finite")
+
+
+def _validate_optional_fields(record: Mapping[str, object]) -> None:
+    _validate_decision(record)
+    _validate_input_tokens(record)
+
+
+def _validate_decision(record: Mapping[str, object]) -> None:
+    if "decision" not in record:
+        return
+    decision = record["decision"]
+    if not isinstance(decision, str) or decision not in {"yes", "no"}:
+        raise MeasurementError("decision must be yes or no")
+    scores = cast(Mapping[str, float], record["logprobs"])
+    if decision != choose_decision(scores):
+        raise MeasurementError("decision is inconsistent with logprobs")
+
+
+def _validate_input_tokens(record: Mapping[str, object]) -> None:
+    if "input_tokens" not in record:
+        return
+    if not _is_non_negative_integer(record["input_tokens"]):
+        raise MeasurementError("input_tokens must be non-negative")
 
 
 def _quantile(values: list[float], probability: float) -> float:
