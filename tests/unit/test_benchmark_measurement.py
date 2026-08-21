@@ -6,6 +6,7 @@ import pytest
 from scripts.render_report import merge_artifacts
 
 import compute_cost_encoders_llms.benchmark.measurement as measurement_module
+from compute_cost_encoders_llms.benchmark.encoder import _variant_logprob
 from compute_cost_encoders_llms.benchmark.measurement import (
     MeasurementError,
     choose_decision,
@@ -14,6 +15,11 @@ from compute_cost_encoders_llms.benchmark.measurement import (
     validate_measurement,
 )
 from compute_cost_encoders_llms.benchmark.reporting import (
+    ModelSummary,
+    _comparison_section,
+    _count_text,
+    _decision_text,
+    _model_summaries,
     build_summary,
     json_line,
     render_latex_document,
@@ -196,7 +202,13 @@ def test_render_latex_document_contains_revisions_and_results() -> None:
                     "latency": {"count": 1, "median": 1.2, "p05": 1.2, "p95": 1.2},
                     "mean_logprobs": {"yes": -0.2, "no": -1.4},
                     "decision_counts": {"yes": 1, "no": 0},
-                }
+                },
+                {
+                    "model": "llm",
+                    "latency": {"count": 1, "median": 2.4, "p05": 2.4, "p95": 2.4},
+                    "mean_logprobs": {"yes": -0.3, "no": -1.1},
+                    "decision_counts": {"yes": 1, "no": 0},
+                },
             ]
         },
     )
@@ -209,6 +221,38 @@ def test_render_latex_document_contains_revisions_and_results() -> None:
     assert "1.200" in document
     assert "mean log" in document
     assert "-0.200" in document
+    assert "Timing decomposition" in document
+    assert "Comparison" in document
+    assert "Reproducibility" in document
+    assert "Interpretation" not in document
+    assert "without fine-tuning or multi" not in document
+    assert document.index("Reproducibility") > document.index("Comparison")
+
+
+def test_report_helpers_fail_closed_on_incomplete_values() -> None:
+    assert _model_summaries({}) == []
+    assert _model_summaries({"models": [None]}) == []
+    assert _count_text(0) == "0"
+    assert _count_text(-1) == "--"
+    assert _count_text(True) == "--"
+    assert _decision_text({"yes": 0, "no": 1}) == "no"
+    assert _decision_text({"yes": 1}) == "--"
+    encoder = {
+        "model": "encoder",
+        "latency": {"median": 1.0},
+        "mean_logprobs": {"yes": -1.0, "no": -2.0},
+        "decision_counts": {"yes": 1, "no": 0},
+    }
+    llm = {**encoder, "model": "llm", "latency": {"median": "missing"}}
+    encoder_summary = cast(ModelSummary, encoder)
+    llm_summary = cast(ModelSummary, llm)
+    assert _comparison_section([encoder_summary]) == []
+    assert _comparison_section([encoder_summary, llm_summary]) == [
+        "\\section*{Comparison}",
+        "Comparison unavailable.",
+    ]
+    with pytest.raises(ValueError, match="must not be empty"):
+        _variant_logprob([0.0], (), 0.0)
 
 
 def test_merge_artifacts_requires_matching_source_commits() -> None:

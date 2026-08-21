@@ -61,7 +61,7 @@ def test_build_manifest_captures_reproducibility_fields(monkeypatch) -> None:
 
     assert manifest["run_id"] == "smoke-001"
     assert manifest["source_commit"] == "a" * 40
-    assert manifest["schema_version"] == 1
+    assert manifest["schema_version"] == 2
     assert set(manifest) == {
         "schema_version",
         "run_id",
@@ -81,7 +81,14 @@ def test_build_manifest_captures_reproducibility_fields(monkeypatch) -> None:
         ),
         "question": "Is this sentence relevant for a land use description?",
         "labels": ("yes", "no"),
+        "label_forms": {
+            "yes": ("yes", "Yes", "YES"),
+            "no": ("no", "No", "NO"),
+        },
     }
+    protocol = cast(dict[str, object], manifest["protocol"])
+    assert protocol["llm_template_endpoint"] == "/apply-template"
+    assert protocol["llm_reasoning"] is False
     models = cast(dict[str, dict[str, str]], manifest["models"])
     assert models["llm"]["revision"] == config.llm_revision
     assert manifest["hardware"] == {"gpu": "test"}

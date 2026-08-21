@@ -12,12 +12,15 @@ import compute_cost_encoders_llms.benchmark.llm as llm_module
 from compute_cost_encoders_llms.benchmark.config import BenchmarkConfig, ConfigError
 from compute_cost_encoders_llms.benchmark.encoder import (
     candidate_logprobs,
+    candidate_variant_logprobs,
     mask_position,
     score_transformers_once,
     validate_single_token_candidates,
+    validate_single_token_variants,
 )
 from compute_cost_encoders_llms.benchmark.example import (
     LANDUSE_SENTENCE,
+    candidate_label_forms,
     candidate_labels,
     encoder_prompt,
     llm_prompt,
@@ -29,6 +32,7 @@ from compute_cost_encoders_llms.benchmark.llm import (
     _post_json,
     _timing_ms,
     _with_top_logprobs,
+    chat_template_request_payload,
     completion_request_payload,
     parse_candidate_logprobs,
 )
@@ -69,8 +73,16 @@ class FakeTokenizer:
 
     def __call__(self, text, **_kwargs):
         self.calls.append((text, dict(_kwargs)))
-        if text in ("yes", "no"):
-            return {"input_ids": [1 if text == "yes" else 2]}
+        candidate_ids = {
+            "yes": [1],
+            "Yes": [3],
+            "YES": [5],
+            "no": [2],
+            "No": [4],
+            "NO": [6],
+        }
+        if text in candidate_ids:
+            return {"input_ids": candidate_ids[text]}
         encoded = {
             "input_ids": FakeTensor([[10, 99, 11]]),
             "attention_mask": FakeTensor([[1, 1, 1]]),
@@ -95,7 +107,15 @@ class FakeTorch:
 class FakeModel:
     def __call__(self, **_inputs):
         return SimpleNamespace(
-            logits=FakeTensor([[[0.0, 0.0, 0.0], [0.0, 2.0, -1.0], [0.0, 0.0, 0.0]]])
+            logits=FakeTensor(
+                [
+                    [
+                        [0.0] * 7,
+                        [0.0, 2.0, -1.0, 1.5, -2.0, 1.0, -3.0],
+                        [0.0] * 7,
+                    ]
+                ]
+            )
         )
 
 
@@ -125,14 +145,19 @@ def test_prompts_ask_relevance_of_the_target_sentence() -> None:
     assert encoder_prompt("<mask>") == (
         'Here is a target sentence: "'
         + LANDUSE_SENTENCE
-        + '"\nIs this sentence relevant for a land use description? <mask>'
+        + '"\nIs this sentence relevant for a land use description?\nAnswer: <mask>'
     )
     assert llm_prompt() == (
         'Here is a target sentence: "'
         + LANDUSE_SENTENCE
         + '"\nIs this sentence relevant for a land use description? '
-        "Answer with exactly yes or no.\nAnswer:"
+        "Answer with exactly yes or no."
     )
+
+
+def test_candidate_label_forms_cover_case_variants() -> None:
+    assert candidate_label_forms("yes") == ("yes", "Yes", "YES")
+    assert candidate_label_forms("no") == ("no", "No", "NO")
 
 
 def test_configuration_requires_immutable_revisions_and_positive_repetitions() -> None:
@@ -236,6 +261,33 @@ def test_candidate_logprobs_rejects_empty_nonfinite_and_out_of_range_inputs() ->
         candidate_logprobs([0.0], {"yes": 1, "no": 0})
 
 
+def test_candidate_variant_logprobs_aggregate_exact_token_ids() -> None:
+    scores = candidate_variant_logprobs(
+        logits=[0.0, 2.0, -1.0, 1.5, -2.0, 1.0, -3.0],
+        candidate_token_ids={"yes": (1, 3, 5), "no": (2, 4, 6)},
+    )
+
+    normalizer = math.log(
+        sum(math.exp(value) for value in (0.0, 2.0, -1.0, 1.5, -2.0, 1.0, -3.0))
+    )
+    assert scores["yes"] == pytest.approx(
+        math.log(math.exp(2.0) + math.exp(1.5) + math.exp(1.0)) - normalizer
+    )
+    assert scores["no"] == pytest.approx(
+        math.log(math.exp(-1.0) + math.exp(-2.0) + math.exp(-3.0)) - normalizer
+    )
+
+
+def test_validate_single_token_variants_rejects_split_forms() -> None:
+    assert validate_single_token_variants({"yes": ((1,), (2,)), "no": ((3,),)}) == {
+        "yes": (1, 2),
+        "no": (3,),
+    }
+
+    with pytest.raises(ValueError, match="single token"):
+        validate_single_token_variants({"yes": ((1, 2),), "no": ((3,),)})
+
+
 def test_score_transformers_once_returns_masked_scores_and_timings(monkeypatch) -> None:
     synchronize_calls: list[str] = []
     tokenizer = FakeTokenizer()
@@ -272,8 +324,11 @@ def test_score_transformers_once_returns_masked_scores_and_timings(monkeypatch) 
             encoder_prompt(tokenizer.mask_token),
             {"return_tensors": "pt", "add_special_tokens": True},
         ),
-        ("yes", {"add_special_tokens": False}),
-        ("no", {"add_special_tokens": False}),
+        *[
+            (form, {"add_special_tokens": False})
+            for label in candidate_labels()
+            for form in candidate_label_forms(label)
+        ],
     ]
     assert tokenizer.last_encoded is not None
     assert all(
@@ -301,6 +356,31 @@ def test_parse_llama_completion_reads_candidate_logprobs() -> None:
     assert parse_candidate_logprobs(payload, ("yes", "no")) == {
         "yes": -0.25,
         "no": -1.25,
+    }
+
+
+def test_parse_llama_aggregates_case_and_spacing_variants_without_overwriting() -> None:
+    payload = {
+        "completion_probabilities": [
+            {
+                "probs": [
+                    {
+                        "token": " Yes",
+                        "logprob": -0.25,
+                        "top_logprobs": [
+                            {"token": "yes", "logprob": -1.25},
+                            {"token": " no", "logprob": -2.0},
+                            {"token": "No", "logprob": -3.0},
+                        ],
+                    }
+                ]
+            }
+        ]
+    }
+
+    assert parse_candidate_logprobs(payload, ("yes", "no")) == {
+        "yes": pytest.approx(math.log(math.exp(-0.25) + math.exp(-1.25))),
+        "no": pytest.approx(math.log(math.exp(-2.0) + math.exp(-3.0))),
     }
 
 
@@ -421,9 +501,11 @@ def test_llama_response_helpers_reject_malformed_values(monkeypatch) -> None:
                 }
             }
         )
-    assert _input_tokens({}) == 0
-    assert _input_tokens({"usage": {}}) == 0
+    assert _input_tokens({}) is None
+    assert _input_tokens({"usage": {}}) is None
     assert _input_tokens({"usage": {"prompt_tokens": 0}}) == 0
+    assert _input_tokens({"tokens_evaluated": 18}) == 18
+    assert _input_tokens({"timings": {"prompt_n": 19}}) == 19
     with pytest.raises(LlamaResponseError, match="token count is invalid"):
         _input_tokens({"usage": {"prompt_tokens": -1}})
     with pytest.raises(LlamaResponseError, match="token count is invalid"):
@@ -481,6 +563,8 @@ def test_llama_client_returns_scores_and_server_timing(monkeypatch) -> None:
 
     def request(url, payload, timeout):
         requests.append((url, payload, timeout))
+        if url.endswith("/apply-template"):
+            return {"prompt": "rendered prompt"}
         return {
             "completion_probabilities": [
                 {
@@ -507,7 +591,18 @@ def test_llama_client_returns_scores_and_server_timing(monkeypatch) -> None:
     assert score.logprob_ms == 1.0
     assert score.text_to_logprob_ms == 3.0
     assert score.input_tokens == 18
-    assert requests[0][0] == "http://127.0.0.1:8080/completion"
+    assert requests[0][0] == "http://127.0.0.1:8080/apply-template"
+    assert requests[0][1] == chat_template_request_payload(llm_prompt())
+    assert requests[0][1]["chat_template_kwargs"] == {"enable_thinking": False}
+    assert requests[1][0] == "http://127.0.0.1:8080/completion"
+    assert requests[1][1]["prompt"] == "rendered prompt"
+
+
+def test_chat_template_payload_contains_only_the_fixed_user_message() -> None:
+    assert chat_template_request_payload("Question") == {
+        "messages": [{"role": "user", "content": "Question"}],
+        "chat_template_kwargs": {"enable_thinking": False},
+    }
 
 
 def test_completion_request_uses_one_prediction_without_prompt_cache() -> None:
@@ -530,19 +625,23 @@ def test_completion_request_uses_one_prediction_without_prompt_cache() -> None:
 def test_llama_score_marks_unmeasured_timings_as_none() -> None:
     client = LlamaClient(
         "http://test",
-        request=lambda _url, _payload, _timeout: {
-            "completion_probabilities": [
-                {
-                    "probs": [
-                        {
-                            "token": "yes",
-                            "logprob": -0.25,
-                            "top_logprobs": [{"token": "no", "logprob": -1.25}],
-                        }
-                    ]
-                }
-            ]
-        },
+        request=lambda url, _payload, _timeout: (
+            {"prompt": "rendered prompt"}
+            if url.endswith("/apply-template")
+            else {
+                "completion_probabilities": [
+                    {
+                        "probs": [
+                            {
+                                "token": "yes",
+                                "logprob": -0.25,
+                                "top_logprobs": [{"token": "no", "logprob": -1.25}],
+                            }
+                        ]
+                    }
+                ]
+            }
+        ),
     )
 
     score = client.score(seed=7)

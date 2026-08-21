@@ -20,7 +20,7 @@ class MeasurementRecord(TypedDict):
     logprob_ms: float
     text_to_logprob_ms: float
     logprobs: dict[str, float]
-    input_tokens: NotRequired[int]
+    input_tokens: NotRequired[int | None]
     decision: NotRequired[str]
 
 
@@ -168,6 +168,8 @@ def _validate_decision(record: Mapping[str, object]) -> None:
 
 def _validate_input_tokens(record: Mapping[str, object]) -> None:
     if "input_tokens" not in record:
+        return
+    if record["input_tokens"] is None:
         return
     if not _is_non_negative_integer(record["input_tokens"]):
         raise MeasurementError("input_tokens must be non-negative")

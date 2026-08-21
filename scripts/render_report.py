@@ -39,6 +39,10 @@ def merge_artifacts(
     manifest = dict(encoder_manifest)
     manifest["backend"] = "both"
     manifest["run_ids"] = [encoder_manifest.get("run_id"), llm_manifest.get("run_id")]
+    manifest["runtime_by_backend"] = {
+        "encoder": encoder_manifest.get("runtime", {}),
+        "llm": llm_manifest.get("runtime", {}),
+    }
     encoder_models = encoder_summary.get("models", [])
     llm_models = llm_summary.get("models", [])
     validated_encoder = _validated_summary_models(encoder_models, "encoder")

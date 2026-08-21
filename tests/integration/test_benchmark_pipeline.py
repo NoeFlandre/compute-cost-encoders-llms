@@ -9,6 +9,10 @@ from typing import cast
 from scripts.render_report import render_report
 
 import compute_cost_encoders_llms.benchmark.cli as cli_module
+from compute_cost_encoders_llms.benchmark.example import (
+    candidate_label_forms,
+    candidate_labels,
+)
 from compute_cost_encoders_llms.benchmark.llm import LlamaClient
 from compute_cost_encoders_llms.benchmark.runtime import build_runtime_metadata
 
@@ -41,8 +45,16 @@ class FakeTokenizer:
     mask_token_id = 99
 
     def __call__(self, text: str, **_kwargs: object) -> dict[str, object]:
-        if text in ("yes", "no"):
-            return {"input_ids": [1 if text == "yes" else 2]}
+        candidate_ids = {
+            form: [index]
+            for index, form in enumerate(
+                form
+                for label in candidate_labels()
+                for form in candidate_label_forms(label)
+            )
+        }
+        if text in candidate_ids:
+            return {"input_ids": candidate_ids[text]}
         return {
             "input_ids": FakeTensor([[10, 99, 11]]),
             "attention_mask": FakeTensor([[1, 1, 1]]),
@@ -65,7 +77,15 @@ class FakeTorch:
 class FakeModel:
     def __call__(self, **_inputs: object) -> SimpleNamespace:
         return SimpleNamespace(
-            logits=FakeTensor([[[0.0, 0.0, 0.0], [0.0, 2.0, -1.0], [0.0, 0.0, 0.0]]])
+            logits=FakeTensor(
+                [
+                    [
+                        [0.0] * 7,
+                        [0.0, 2.0, -1.0, 1.5, -2.0, 1.0, -3.0],
+                        [0.0] * 7,
+                    ]
+                ]
+            )
         )
 
 
@@ -100,7 +120,9 @@ def _fake_encoder_loader(_config: object) -> cli_module.LoadedEncoder:
 
 
 def _fake_llama_client(_url: str) -> LlamaClient:
-    def request(_url: str, _payload: object, _timeout: float) -> dict[str, object]:
+    def request(url: str, _payload: object, _timeout: float) -> dict[str, object]:
+        if url.endswith("/apply-template"):
+            return {"prompt": "rendered prompt"}
         return {
             "completion_probabilities": [
                 {

@@ -12,6 +12,14 @@ def candidate_labels() -> tuple[str, str]:
     return ("yes", "no")
 
 
+def candidate_label_forms(label: str) -> tuple[str, str, str]:
+    """Return exact answer spellings that represent one binary label."""
+
+    if label not in candidate_labels():
+        raise ValueError(f"unsupported candidate label: {label}")
+    return (label, label.capitalize(), label.upper())
+
+
 def encoder_prompt(mask_token: str) -> str:
     """Build the masked-token prompt for the encoder."""
 
@@ -19,7 +27,7 @@ def encoder_prompt(mask_token: str) -> str:
         raise ValueError("mask_token must not be empty")
     return (
         f'Here is a target sentence: "{LANDUSE_SENTENCE}"\n'
-        f"{LANDUSE_QUESTION} {mask_token}"
+        f"{LANDUSE_QUESTION}\nAnswer: {mask_token}"
     )
 
 
@@ -29,5 +37,5 @@ def llm_prompt() -> str:
     return (
         f'Here is a target sentence: "{LANDUSE_SENTENCE}"\n'
         f"{LANDUSE_QUESTION} "
-        "Answer with exactly yes or no.\nAnswer:"
+        "Answer with exactly yes or no."
     )

@@ -7,7 +7,7 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import Protocol, cast
 
-from .example import candidate_labels, encoder_prompt
+from .example import candidate_label_forms, candidate_labels, encoder_prompt
 
 
 class TensorLike(Protocol):
@@ -57,6 +57,33 @@ def validate_single_token_candidates(
     return result
 
 
+def validate_single_token_variants(
+    candidate_tokens: Mapping[str, Sequence[Sequence[int]]],
+) -> dict[str, tuple[int, ...]]:
+    """Return exact vocabulary IDs for all single-token label spellings."""
+
+    result: dict[str, tuple[int, ...]] = {}
+    for label in candidate_labels():
+        forms = candidate_tokens.get(label)
+        result[label] = _validated_variant_ids(label, forms)
+    return result
+
+
+def _validated_variant_ids(
+    label: str, forms: Sequence[Sequence[int]] | None
+) -> tuple[int, ...]:
+    if not forms:
+        raise ValueError(f"{label} must have a single-token form")
+    token_ids = tuple(_validated_single_token_id(label, tokens) for tokens in forms)
+    return tuple(dict.fromkeys(token_ids))
+
+
+def _validated_single_token_id(label: str, tokens: Sequence[int]) -> int:
+    if len(tokens) != 1:
+        raise ValueError(f"{label} must be represented by a single token")
+    return int(tokens[0])
+
+
 def mask_position(input_ids: Sequence[int], mask_token_id: int) -> int:
     """Return the only masked position in an encoded input."""
 
@@ -78,6 +105,19 @@ def candidate_logprobs(
     return {
         label: _candidate_logprob(values, token_id, normalizer)
         for label, token_id in candidate_token_ids.items()
+    }
+
+
+def candidate_variant_logprobs(
+    logits: Sequence[float], candidate_token_ids: Mapping[str, Sequence[int]]
+) -> dict[str, float]:
+    """Aggregate log-softmax scores for exact token-ID label variants."""
+
+    values = _validated_logits(logits)
+    normalizer = _log_normalizer(values)
+    return {
+        label: _variant_logprob(values, token_ids, normalizer)
+        for label, token_ids in candidate_token_ids.items()
     }
 
 
@@ -104,6 +144,18 @@ def _candidate_logprob(
     if token_id < 0 or token_id >= len(logits):
         raise ValueError(f"candidate token ID is out of range: {token_id}")
     return float(logits[token_id]) - normalizer
+
+
+def _variant_logprob(
+    logits: Sequence[float], token_ids: Sequence[int], normalizer: float
+) -> float:
+    if not token_ids:
+        raise ValueError("candidate token IDs must not be empty")
+    values = [
+        _candidate_logprob(logits, token_id, normalizer) for token_id in token_ids
+    ]
+    maximum = max(values)
+    return maximum + math.log(sum(math.exp(value - maximum) for value in values))
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,8 +186,12 @@ def score_transformers_once(
         add_special_tokens=True,
     )
     candidate_tokens = {
-        label: cast(
-            Sequence[int], tokenizer(label, add_special_tokens=False)["input_ids"]
+        label: tuple(
+            cast(
+                Sequence[int],
+                tokenizer(form, add_special_tokens=False)["input_ids"],
+            )
+            for form in candidate_label_forms(label)
         )
         for label in candidate_labels()
     }
@@ -143,7 +199,7 @@ def score_transformers_once(
     input_ids = cast(TensorLike, encoded["input_ids"])
     input_id_list = cast(list[int], input_ids[0].tolist())
     position = mask_position(input_id_list, tokenizer.mask_token_id)
-    candidate_ids = validate_single_token_candidates(candidate_tokens)
+    candidate_ids = validate_single_token_variants(candidate_tokens)
     model_inputs = {
         name: cast(TensorLike, value).to(device) for name, value in encoded.items()
     }
@@ -158,7 +214,7 @@ def score_transformers_once(
     logprob_start = time.perf_counter_ns()
     logits = cast(TensorLike, outputs.logits)[0][position]
     logits = cast(Sequence[float], logits.detach().float().cpu().tolist())
-    logprobs = candidate_logprobs(logits, candidate_ids)
+    logprobs = candidate_variant_logprobs(logits, candidate_ids)
     logprob_ms = (time.perf_counter_ns() - logprob_start) / 1_000_000
     text_to_logprob_ms = (time.perf_counter_ns() - total_start) / 1_000_000
     return EncoderScore(

@@ -19,7 +19,12 @@ from .encoder import (
     TorchLike,
     score_transformers_once,
 )
-from .example import LANDUSE_QUESTION, LANDUSE_SENTENCE, candidate_labels
+from .example import (
+    LANDUSE_QUESTION,
+    LANDUSE_SENTENCE,
+    candidate_label_forms,
+    candidate_labels,
+)
 from .llm import LlamaClient, LlamaScore
 from .measurement import MeasurementRecord, choose_decision, measure_repetitions
 from .reporting import build_summary, write_json, write_jsonl
@@ -70,7 +75,7 @@ def build_manifest(
     """Build the reproducibility manifest for a run."""
 
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "run_id": run_id,
         "source_commit": source_commit,
         "seed": config.seed,
@@ -78,6 +83,9 @@ def build_manifest(
             "sentence": LANDUSE_SENTENCE,
             "question": LANDUSE_QUESTION,
             "labels": candidate_labels(),
+            "label_forms": {
+                label: candidate_label_forms(label) for label in candidate_labels()
+            },
         },
         "models": {
             "encoder": {
@@ -99,6 +107,9 @@ def build_manifest(
             "batch_size": 1,
             "generated_tokens": 1,
             "prompt_cache": False,
+            "encoder_answer_marker": "Answer: <mask>",
+            "llm_template_endpoint": "/apply-template",
+            "llm_reasoning": False,
         },
         "hardware": dict(hardware),
     }

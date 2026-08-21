@@ -32,6 +32,15 @@ def completion_request_payload(prompt: str, seed: int) -> dict[str, object]:
     }
 
 
+def chat_template_request_payload(user_prompt: str) -> dict[str, object]:
+    """Build a Qwen-compatible user-message template request without thinking."""
+
+    return {
+        "messages": [{"role": "user", "content": user_prompt}],
+        "chat_template_kwargs": {"enable_thinking": False},
+    }
+
+
 @dataclass(frozen=True, slots=True)
 class LlamaScore:
     """One llama.cpp next-token logprob result and timing components."""
@@ -41,7 +50,7 @@ class LlamaScore:
     model_ms: float | None
     logprob_ms: float
     text_to_logprob_ms: float
-    input_tokens: int
+    input_tokens: int | None
 
 
 def _post_json(
@@ -57,7 +66,7 @@ def _post_json(
 
 
 class LlamaClient:
-    """Small HTTP client for one uncached llama.cpp completion."""
+    """Small HTTP client for one templated, uncached llama.cpp completion."""
 
     def __init__(
         self,
@@ -68,7 +77,9 @@ class LlamaClient:
             [str, Mapping[str, object], float], Mapping[str, object]
         ] = _post_json,
     ) -> None:
-        self._url = base_url.rstrip("/") + "/completion"
+        base = base_url.rstrip("/")
+        self._template_url = base + "/apply-template"
+        self._completion_url = base + "/completion"
         self._timeout_s = timeout_s
         self._request = request
 
@@ -76,8 +87,17 @@ class LlamaClient:
         """Request one next-token distribution for the fixed land-use prompt."""
 
         total_start = time.perf_counter_ns()
-        payload = completion_request_payload(llm_prompt(), seed)
-        response = self._request(self._url, payload, self._timeout_s)
+        template_response = self._request(
+            self._template_url,
+            chat_template_request_payload(llm_prompt()),
+            self._timeout_s,
+        )
+        prompt = _rendered_prompt(template_response)
+        response = self._request(
+            self._completion_url,
+            completion_request_payload(prompt, seed),
+            self._timeout_s,
+        )
         model_ms = _timing_ms(response)
         tokenization_ms = None
         logprob_start = time.perf_counter_ns()
@@ -92,6 +112,13 @@ class LlamaClient:
             text_to_logprob_ms=text_to_logprob_ms,
             input_tokens=_input_tokens(response),
         )
+
+
+def _rendered_prompt(response: Mapping[str, object]) -> str:
+    prompt = response.get("prompt")
+    if not isinstance(prompt, str) or not prompt:
+        raise LlamaResponseError("llama.cpp template response has no rendered prompt")
+    return prompt
 
 
 def _timing_ms(response: Mapping[str, object]) -> float | None:
@@ -134,18 +161,29 @@ def _timing_total(prompt_ms: float, predicted_ms: float) -> float:
     return total
 
 
-def _input_tokens(response: Mapping[str, object]) -> int:
-    usage = response.get("usage")
-    if not isinstance(usage, Mapping):
-        return 0
-    prompt_tokens = usage.get("prompt_tokens", 0)
-    if (
-        isinstance(prompt_tokens, bool)
-        or not isinstance(prompt_tokens, int)
-        or prompt_tokens < 0
-    ):
+def _input_tokens(response: Mapping[str, object]) -> int | None:
+    sources = (
+        (response.get("usage"), "prompt_tokens"),
+        (response, "tokens_evaluated"),
+        (response.get("timings"), "prompt_n"),
+    )
+    for source, field in sources:
+        value = _mapping_entry(source, field)
+        if value is not None:
+            return _validated_token_count(value)
+    return None
+
+
+def _mapping_entry(source: object, field: str) -> object | None:
+    if not isinstance(source, Mapping):
+        return None
+    return source.get(field)
+
+
+def _validated_token_count(value: object) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         raise LlamaResponseError("llama.cpp prompt token count is invalid")
-    return prompt_tokens
+    return value
 
 
 def _entries(payload: Mapping[str, object]) -> list[Mapping[str, object]]:
@@ -223,31 +261,45 @@ def parse_candidate_logprobs(
 ) -> dict[str, float]:
     """Extract raw log probabilities for all requested candidate labels."""
 
-    scores: dict[str, float] = {}
+    scores: dict[str, list[float]] = {}
     for entry in _entries(payload):
         parsed = _candidate_logprob(entry, candidates)
         if parsed is not None:
             label, value = parsed
-            scores[label] = value
+            scores.setdefault(label, []).append(value)
     _require_candidate_scores(scores, candidates)
-    return {candidate: scores[candidate] for candidate in candidates}
+    return {candidate: _logsumexp(scores[candidate]) for candidate in candidates}
 
 
 def _candidate_logprob(
     entry: Mapping[str, object], candidates: Sequence[str]
 ) -> tuple[str, float] | None:
+    parsed = _candidate_token_score(entry)
+    if parsed is None:
+        return None
+    token, score = parsed
+    normalized = token.strip().casefold()
+    candidate_by_key = {candidate.casefold(): candidate for candidate in candidates}
+    if normalized not in candidate_by_key:
+        return None
+    return candidate_by_key[normalized], score
+
+
+def _candidate_token_score(entry: Mapping[str, object]) -> tuple[str, float] | None:
     token = entry.get("token")
     value = entry.get("logprob")
-    if not isinstance(token, str) or not isinstance(value, (int, float)):
+    if not isinstance(token, str):
         return None
-    normalized = token.strip().lower()
-    if normalized not in candidates or not math.isfinite(float(value)):
+    if not isinstance(value, (int, float)):
         return None
-    return normalized, float(value)
+    score = float(value)
+    if not math.isfinite(score):
+        return None
+    return token, score
 
 
 def _require_candidate_scores(
-    scores: Mapping[str, float], candidates: Sequence[str]
+    scores: Mapping[str, Sequence[float]], candidates: Sequence[str]
 ) -> None:
     missing = _missing_candidates(scores, candidates)
     if missing:
@@ -257,6 +309,13 @@ def _require_candidate_scores(
 
 
 def _missing_candidates(
-    scores: Mapping[str, float], candidates: Sequence[str]
+    scores: Mapping[str, Sequence[float]], candidates: Sequence[str]
 ) -> list[str]:
     return [candidate for candidate in candidates if candidate not in scores]
+
+
+def _logsumexp(values: Sequence[float]) -> float:
+    if not values:
+        raise LlamaResponseError("candidate logprobs must not be empty")
+    maximum = max(values)
+    return maximum + math.log(sum(math.exp(value - maximum) for value in values))
