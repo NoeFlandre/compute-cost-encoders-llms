@@ -120,9 +120,12 @@ def measure_llm_once(
 
 
 def capture_loaded_encoder(
-    calls: list[BenchmarkConfig], loaded: LoadedEncoder, value: BenchmarkConfig
+    calls: list[tuple[BenchmarkConfig, str | None]],
+    loaded: LoadedEncoder,
+    value: BenchmarkConfig,
+    dependency_lock_sha256: str | None = None,
 ) -> LoadedEncoder:
-    calls.append(value)
+    calls.append((value, dependency_lock_sha256))
     return loaded
 
 
@@ -483,9 +486,9 @@ def test_encoder_records_preserve_config_inputs_and_runtime_metadata(
         tokenizer=tokenizer,
         model=model,
         torch_module=torch_module,
-        runtime={"dtype": "float32"},
+        runtime={"dtype": "float32", "dependency_lock_sha256": "lock-sha"},
     )
-    load_calls: list[BenchmarkConfig] = []
+    load_calls: list[tuple[BenchmarkConfig, str | None]] = []
     score_calls: list[tuple[object, object, object, str]] = []
 
     score = EncoderScore(
@@ -523,7 +526,7 @@ def test_encoder_records_preserve_config_inputs_and_runtime_metadata(
 
     records, runtime = _encoder_records(config, "lock-sha")
 
-    assert load_calls == [config]
+    assert load_calls == [(config, "lock-sha")]
     assert score_calls == [(tokenizer, model, torch_module, "cuda")]
     assert records == [{**score_record("encoder", 0, score)}]
     assert runtime == {"dtype": "float32", "dependency_lock_sha256": "lock-sha"}

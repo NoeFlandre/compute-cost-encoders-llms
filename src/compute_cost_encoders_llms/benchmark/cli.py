@@ -155,7 +155,10 @@ def _config_digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _load_encoder(config: BenchmarkConfig) -> LoadedEncoder:
+def _load_encoder(
+    config: BenchmarkConfig,
+    dependency_lock_sha256: str | None = None,
+) -> LoadedEncoder:
     try:
         torch_module = importlib.import_module("torch")
         transformers_module = importlib.import_module("transformers")
@@ -180,7 +183,7 @@ def _load_encoder(config: BenchmarkConfig) -> LoadedEncoder:
         dtype=precision.name,
         llama_cpp_revision=config.llama_cpp_revision,
         llm_filename=config.llm_filename,
-        dependency_lock_sha256=None,
+        dependency_lock_sha256=dependency_lock_sha256,
     )
     return LoadedEncoder(
         _as_tokenizer(tokenizer),
@@ -194,7 +197,7 @@ def _encoder_records(
     config: BenchmarkConfig,
     dependency_lock_sha256: str | None,
 ) -> tuple[list[MeasurementRecord], Mapping[str, object]]:
-    loaded = _load_encoder(config)
+    loaded = _load_encoder(config, dependency_lock_sha256)
     timed = measure_repetitions(
         lambda: score_transformers_once(
             loaded.tokenizer,
@@ -205,14 +208,12 @@ def _encoder_records(
         warmups=config.warmups,
         repetitions=config.repetitions,
     )
-    runtime = dict(loaded.runtime)
-    runtime["dependency_lock_sha256"] = dependency_lock_sha256
     return (
         [
             score_record("encoder", index, item.value)
             for index, item in enumerate(timed)
         ],
-        runtime,
+        loaded.runtime,
     )
 
 

@@ -104,7 +104,10 @@ warmups = 1
     return path
 
 
-def _fake_encoder_loader(_config: object) -> cli_module.LoadedEncoder:
+def _fake_encoder_loader(
+    _config: object,
+    dependency_lock_sha256: str | None = None,
+) -> cli_module.LoadedEncoder:
     return cli_module.LoadedEncoder(
         tokenizer=FakeTokenizer(),
         model=FakeModel(),
@@ -114,7 +117,7 @@ def _fake_encoder_loader(_config: object) -> cli_module.LoadedEncoder:
             dtype="float32",
             llama_cpp_revision="6503355df0eb4f65875012523263c302fe0088c1",
             llm_filename="Qwen3.6-27B-Q4_K_M.gguf",
-            dependency_lock_sha256=None,
+            dependency_lock_sha256=dependency_lock_sha256,
         ),
     )
 
