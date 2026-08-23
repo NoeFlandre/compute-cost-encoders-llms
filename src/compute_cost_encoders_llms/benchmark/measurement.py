@@ -5,7 +5,7 @@ import statistics
 import time
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
-from typing import NotRequired, TypedDict, TypeGuard, cast
+from typing import NotRequired, TypedDict, TypeGuard
 
 
 class MeasurementError(ValueError):
@@ -69,24 +69,26 @@ _TIMING_FIELDS = (
     "text_to_logprob_ms",
 )
 _OPTIONAL_TIMING_FIELDS = ("tokenization_ms", "model_ms")
-_REQUIRED_TIMING_FIELDS = ("logprob_ms", "text_to_logprob_ms")
 
 
 def validate_measurement(record: Mapping[str, object]) -> MeasurementRecord:
     """Validate and copy one model timing and score record."""
 
-    _require_measurement_fields(record)
+    assert _require_measurement_fields(record)
     _validate_identity(record)
     _validate_timings(record)
-    _validate_logprobs(record)
-    _validate_optional_fields(record)
-    return cast(MeasurementRecord, dict(record))
+    logprobs = _validate_logprobs(record)
+    _validate_optional_fields(record, logprobs)
+    return {**record}
 
 
-def _require_measurement_fields(record: Mapping[str, object]) -> None:
+def _require_measurement_fields(
+    record: Mapping[str, object],
+) -> TypeGuard[MeasurementRecord]:
     for field in ("model", "repetition", "logprobs", *_TIMING_FIELDS):
         if field not in record:
             raise MeasurementError(f"missing measurement field: {field}")
+    return True
 
 
 def _validate_identity(record: Mapping[str, object]) -> None:
@@ -129,7 +131,7 @@ def _is_finite_number(value: object) -> TypeGuard[int | float]:
 
 def _validate_total_covers_components(record: Mapping[str, object]) -> None:
     total = _required_float(record["text_to_logprob_ms"])
-    fields = _REQUIRED_TIMING_FIELDS[:-1] + _OPTIONAL_TIMING_FIELDS
+    fields = ("logprob_ms", *_OPTIONAL_TIMING_FIELDS)
     for field in fields:
         value = record[field]
         if value is not None and total < _required_float(value):
@@ -142,26 +144,30 @@ def _required_float(value: object) -> float:
     return float(value)
 
 
-def _validate_logprobs(record: Mapping[str, object]) -> None:
+def _validate_logprobs(record: Mapping[str, object]) -> dict[str, float]:
     logprobs = record["logprobs"]
     if not isinstance(logprobs, Mapping) or set(logprobs) != {"yes", "no"}:
         raise MeasurementError("logprobs must contain yes and no")
     if any(not _is_finite_number(logprobs[label]) for label in ("yes", "no")):
         raise MeasurementError("logprobs must be finite")
+    return {label: float(logprobs[label]) for label in ("yes", "no")}
 
 
-def _validate_optional_fields(record: Mapping[str, object]) -> None:
-    _validate_decision(record)
+def _validate_optional_fields(
+    record: Mapping[str, object], logprobs: Mapping[str, float]
+) -> None:
+    _validate_decision(record, logprobs)
     _validate_input_tokens(record)
 
 
-def _validate_decision(record: Mapping[str, object]) -> None:
+def _validate_decision(
+    record: Mapping[str, object], scores: Mapping[str, float]
+) -> None:
     if "decision" not in record:
         return
     decision = record["decision"]
     if not isinstance(decision, str) or decision not in {"yes", "no"}:
         raise MeasurementError("decision must be yes or no")
-    scores = cast(Mapping[str, float], record["logprobs"])
     if decision != choose_decision(scores):
         raise MeasurementError("decision is inconsistent with logprobs")
 
@@ -200,18 +206,15 @@ def summarize_latencies(latencies: Iterable[float]) -> LatencySummary:
     """Summarize non-negative latency samples with deterministic quantiles."""
 
     values = _validated_latencies(latencies)
-    return cast(
-        LatencySummary,
-        {
-            "count": len(values),
-            "minimum": values[0],
-            "median": _quantile(values, 0.5),
-            "p05": _quantile(values, 0.05),
-            "p95": _quantile(values, 0.95),
-            "maximum": values[-1],
-            "mean": statistics.fmean(values),
-            "stdev": statistics.stdev(values) if len(values) > 1 else 0.0,
-        },
+    return LatencySummary(
+        count=len(values),
+        minimum=values[0],
+        median=_quantile(values, 0.5),
+        p05=_quantile(values, 0.05),
+        p95=_quantile(values, 0.95),
+        maximum=values[-1],
+        mean=statistics.fmean(values),
+        stdev=statistics.stdev(values) if len(values) > 1 else 0.0,
     )
 
 

@@ -9,7 +9,6 @@ import subprocess
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
 
 from .config import BenchmarkConfig
 from .encoder import (
@@ -39,10 +38,30 @@ from .runtime import (
 class LoadedEncoder:
     """Lazy-loaded encoder resources and the facts observed while loading."""
 
-    tokenizer: object
-    model: object
-    torch_module: object
+    tokenizer: TokenizerLike
+    model: ModelLike
+    torch_module: TorchLike
     runtime: Mapping[str, object]
+
+
+def _as_tokenizer(value: object) -> TokenizerLike:
+    if not isinstance(value, TokenizerLike):
+        raise RuntimeError("loaded tokenizer does not implement the encoder interface")
+    return value
+
+
+def _as_model(value: object) -> ModelLike:
+    if not isinstance(value, ModelLike):
+        raise RuntimeError("loaded model does not implement the encoder interface")
+    return value
+
+
+def _as_torch(value: object) -> TorchLike:
+    if not isinstance(value, TorchLike):
+        raise RuntimeError(
+            "loaded torch module does not implement the encoder interface"
+        )
+    return value
 
 
 def score_record(
@@ -163,7 +182,12 @@ def _load_encoder(config: BenchmarkConfig) -> LoadedEncoder:
         llm_filename=config.llm_filename,
         dependency_lock_sha256=None,
     )
-    return LoadedEncoder(tokenizer, model, torch_module, runtime)
+    return LoadedEncoder(
+        _as_tokenizer(tokenizer),
+        _as_model(model),
+        _as_torch(torch_module),
+        runtime,
+    )
 
 
 def _encoder_records(
@@ -173,9 +197,9 @@ def _encoder_records(
     loaded = _load_encoder(config)
     timed = measure_repetitions(
         lambda: score_transformers_once(
-            cast(TokenizerLike, loaded.tokenizer),
-            cast(ModelLike, loaded.model),
-            cast(TorchLike, loaded.torch_module),
+            loaded.tokenizer,
+            loaded.model,
+            loaded.torch_module,
             config.device,
         ),
         warmups=config.warmups,
@@ -250,7 +274,7 @@ def _dependency_lock_digest(config_path: Path) -> str | None:
         Path(__file__).resolve().parents[3] / "uv.lock",
     )
     for candidate in candidates:
-        if candidate.is_file():
+        if candidate.name == "uv.lock" and candidate.is_file():
             return _config_digest(candidate)
     return None
 

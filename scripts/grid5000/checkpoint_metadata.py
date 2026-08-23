@@ -8,7 +8,6 @@ import json
 import sys
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import cast
 
 PROJECT_BUCKET_PREFIX = "hf://buckets/NoeFlandre/compute-cost-encoders-llms/"
 REQUIRED_TEXT_FIELDS = (
@@ -86,11 +85,10 @@ def validate_metadata(metadata: object) -> list[str]:
     if not isinstance(metadata, Mapping):
         return ["metadata must be a JSON object"]
 
-    typed_metadata = cast(Mapping[str, object], metadata)
     return (
-        _required_text_errors(typed_metadata)
-        + _integer_errors(typed_metadata)
-        + _integrity_errors(typed_metadata)
+        _required_text_errors(metadata)
+        + _integer_errors(metadata)
+        + _integrity_errors(metadata)
     )
 
 

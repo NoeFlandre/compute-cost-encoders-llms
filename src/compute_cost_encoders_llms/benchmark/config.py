@@ -4,7 +4,7 @@ import re
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import ClassVar, cast
+from typing import ClassVar
 
 
 class ConfigError(ValueError):
@@ -47,7 +47,7 @@ class BenchmarkConfig:
     @classmethod
     def from_toml(cls, path: Path) -> BenchmarkConfig:
         with path.open("rb") as stream:
-            document = cast(dict[str, object], tomllib.load(stream))
+            document = tomllib.load(stream)
         values = document.get("benchmark", document)
         if not isinstance(values, dict):
             raise ConfigError("benchmark TOML section must be an object")

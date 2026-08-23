@@ -5,17 +5,11 @@ import os
 import platform
 import re
 from dataclasses import dataclass
-from typing import Protocol, cast
+from typing import Protocol, TypeGuard
 
 
 class CudaApi(Protocol):
-    def is_available(self) -> bool: ...
-
-    def is_bf16_supported(self) -> bool: ...
-
-    def get_device_capability(self, device: int = 0) -> tuple[int, int]: ...
-
-    def get_device_name(self, device: int = 0) -> str: ...
+    """Marker for the CUDA object probed through its optional attributes."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,9 +75,13 @@ def _dtype(torch_module: object, name: str) -> object:
 
 def _cuda(torch_module: object) -> CudaApi:
     cuda = getattr(torch_module, "cuda", None)
-    if cuda is None:
+    if not _is_cuda_api(cuda):
         raise RuntimeError("torch does not expose CUDA")
-    return cast(CudaApi, cuda)
+    return cuda
+
+
+def _is_cuda_api(value: object) -> TypeGuard[CudaApi]:
+    return value is not None
 
 
 def _cuda_available(cuda: CudaApi) -> bool:
@@ -118,28 +116,25 @@ def _fp16_supported(cuda: CudaApi) -> bool:
     return capability >= (5, 3)
 
 
+def _unavailable_cuda_metadata() -> dict[str, object]:
+    return {
+        "available": None,
+        "gpu": None,
+        "capability": None,
+        "runtime": None,
+        "driver": None,
+        "visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES", ""),
+    }
+
+
 def _cuda_metadata(torch_module: object | None) -> dict[str, object]:
     if torch_module is None:
-        return {
-            "available": None,
-            "gpu": None,
-            "capability": None,
-            "runtime": None,
-            "driver": None,
-            "visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES", ""),
-        }
+        return _unavailable_cuda_metadata()
 
     try:
         cuda = _cuda(torch_module)
     except RuntimeError:
-        return {
-            "available": None,
-            "gpu": None,
-            "capability": None,
-            "runtime": None,
-            "driver": None,
-            "visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES", ""),
-        }
+        return _unavailable_cuda_metadata()
     available = _cuda_available(cuda)
     capability = _device_capability(cuda) if available else None
     return {

@@ -9,6 +9,7 @@ import compute_cost_encoders_llms.benchmark.measurement as measurement_module
 from compute_cost_encoders_llms.benchmark.encoder import _variant_logprob
 from compute_cost_encoders_llms.benchmark.measurement import (
     MeasurementError,
+    _required_float,
     choose_decision,
     measure_repetitions,
     summarize_latencies,
@@ -42,9 +43,15 @@ def test_summarize_latencies_returns_deterministic_quantiles() -> None:
 def test_summarize_latencies_handles_single_and_invalid_samples() -> None:
     assert summarize_latencies([2.0])["stdev"] == 0.0
     assert summarize_latencies([0.0])["minimum"] == 0.0
-    with pytest.raises(MeasurementError, match="latencies"):
+    with pytest.raises(
+        MeasurementError,
+        match=r"^latencies must contain finite non-negative values$",
+    ):
         summarize_latencies([])
-    with pytest.raises(MeasurementError, match="latencies"):
+    with pytest.raises(
+        MeasurementError,
+        match=r"^latencies must contain finite non-negative values$",
+    ):
         summarize_latencies([-1.0])
 
 
@@ -62,14 +69,28 @@ def test_validate_measurement_requires_text_to_logprob_timing() -> None:
     assert validate_measurement(record) == record
     assert validate_measurement({**record, "model_ms": 0.0})["model_ms"] == 0.0
 
-    with pytest.raises(MeasurementError, match="non-negative"):
+    with pytest.raises(
+        MeasurementError,
+        match=r"^model_ms must be non-negative$",
+    ):
         validate_measurement({**record, "model_ms": -1.0})
-    with pytest.raises(MeasurementError, match="model must be non-empty"):
+    with pytest.raises(MeasurementError, match=r"^model must be non-empty$"):
         validate_measurement({**record, "model": ""})
-    with pytest.raises(MeasurementError, match="repetition must be non-negative"):
+    with pytest.raises(
+        MeasurementError,
+        match=r"^repetition must be non-negative$",
+    ):
         validate_measurement({**record, "repetition": -1})
-    with pytest.raises(MeasurementError, match="logprobs must contain"):
+    with pytest.raises(
+        MeasurementError,
+        match=r"^logprobs must contain yes and no$",
+    ):
         validate_measurement({**record, "logprobs": {"yes": -1.0}})
+    with pytest.raises(
+        MeasurementError,
+        match=r"^missing measurement field: model$",
+    ):
+        validate_measurement({})
 
 
 def test_json_line_is_sorted_and_serializable(tmp_path) -> None:
@@ -108,9 +129,12 @@ def test_choose_decision_uses_stable_label_order_for_ties() -> None:
     assert choose_decision({"yes": -1.0, "no": -1.0}) == "yes"
     assert choose_decision({"yes": -0.1, "no": -1.0}) == "yes"
     assert choose_decision({"yes": -2.2, "no": -0.1}) == "no"
-    with pytest.raises(MeasurementError, match="yes and no"):
+    with pytest.raises(
+        MeasurementError,
+        match=r"^logprobs must contain yes and no$",
+    ):
         choose_decision({"yes": -1.0})
-    with pytest.raises(MeasurementError, match="finite"):
+    with pytest.raises(MeasurementError, match=r"^logprobs must be finite$"):
         choose_decision({"yes": float("nan"), "no": -1.0})
 
 
@@ -128,9 +152,15 @@ def test_measure_repetitions_excludes_warmups(monkeypatch) -> None:
     assert all(result.elapsed_ms >= 0 for result in results)
 
     assert measure_repetitions(operation, warmups=0, repetitions=1)
-    with pytest.raises(MeasurementError, match="warmups"):
+    with pytest.raises(
+        MeasurementError,
+        match=r"^warmups must be non-negative and repetitions positive$",
+    ):
         measure_repetitions(operation, warmups=-1, repetitions=1)
-    with pytest.raises(MeasurementError, match="repetitions"):
+    with pytest.raises(
+        MeasurementError,
+        match=r"^warmups must be non-negative and repetitions positive$",
+    ):
         measure_repetitions(operation, warmups=0, repetitions=0)
 
     ticks = iter((100, 1_000_100))
@@ -314,9 +344,12 @@ def test_validate_measurement_rejects_nonfinite_scores_and_inconsistent_decision
         "logprobs": {"yes": -0.1, "no": -2.2},
     }
 
-    with pytest.raises(MeasurementError, match="finite"):
+    with pytest.raises(MeasurementError, match=r"^logprobs must be finite$"):
         validate_measurement({**record, "logprobs": {"yes": float("nan"), "no": -2.2}})
-    with pytest.raises(MeasurementError, match="decision"):
+    with pytest.raises(
+        MeasurementError,
+        match=r"^decision is inconsistent with logprobs$",
+    ):
         validate_measurement({**record, "decision": "no"})
     decision_no = {
         **record,
@@ -324,18 +357,32 @@ def test_validate_measurement_rejects_nonfinite_scores_and_inconsistent_decision
         "decision": "no",
     }
     assert validate_measurement(decision_no) == decision_no
-    with pytest.raises(MeasurementError, match="yes or no"):
+    with pytest.raises(
+        MeasurementError,
+        match=r"^decision must be yes or no$",
+    ):
         validate_measurement({**record, "decision": "maybe"})
-    with pytest.raises(MeasurementError, match="input_tokens"):
+    with pytest.raises(
+        MeasurementError,
+        match=r"^input_tokens must be non-negative$",
+    ):
         validate_measurement({**record, "input_tokens": True})
-    with pytest.raises(MeasurementError, match="cover component"):
+    with pytest.raises(
+        MeasurementError,
+        match=r"^text_to_logprob_ms must cover component timings$",
+    ):
         validate_measurement({**record, "model_ms": 4.0})
-    with pytest.raises(MeasurementError, match="cover component"):
+    with pytest.raises(
+        MeasurementError,
+        match=r"^text_to_logprob_ms must cover component timings$",
+    ):
         validate_measurement({**record, "logprob_ms": 4.0})
     equal_component = {**record, "model_ms": record["text_to_logprob_ms"]}
     assert validate_measurement(equal_component) == equal_component
-    with pytest.raises(MeasurementError, match="finite"):
+    with pytest.raises(MeasurementError, match=r"^logprob_ms must be finite$"):
         validate_measurement({**record, "logprob_ms": None})
+    with pytest.raises(MeasurementError, match=r"^timing must be finite$"):
+        _required_float(float("nan"))
 
 
 def test_summary_preserves_unmeasured_timing_as_none_and_rejects_empty_input() -> None:

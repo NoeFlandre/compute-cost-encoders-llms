@@ -5,11 +5,13 @@ import time
 from collections.abc import Mapping, Sequence
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
-from typing import Protocol, cast
+from typing import Protocol, TypeGuard, runtime_checkable
 
+from ._numerics import logsumexp
 from .example import candidate_label_forms, candidate_labels, encoder_prompt
 
 
+@runtime_checkable
 class TensorLike(Protocol):
     def __getitem__(self, index: int | slice) -> TensorLike: ...
 
@@ -24,6 +26,7 @@ class TensorLike(Protocol):
     def cpu(self) -> TensorLike: ...
 
 
+@runtime_checkable
 class TokenizerLike(Protocol):
     mask_token: str
     mask_token_id: int
@@ -31,6 +34,7 @@ class TokenizerLike(Protocol):
     def __call__(self, text: str, **kwargs: object) -> Mapping[str, object]: ...
 
 
+@runtime_checkable
 class ModelLike(Protocol):
     def __call__(self, **inputs: object) -> ModelOutputLike: ...
 
@@ -39,6 +43,7 @@ class ModelOutputLike(Protocol):
     logits: object
 
 
+@runtime_checkable
 class TorchLike(Protocol):
     def inference_mode(self) -> AbstractContextManager[object]: ...
 
@@ -131,11 +136,7 @@ def _validated_logits(logits: Sequence[float]) -> list[float]:
 
 
 def _log_normalizer(logits: Sequence[float]) -> float:
-    maximum = max(logits)
-    normalizer = maximum + math.log(
-        sum(math.exp(float(value) - maximum) for value in logits)
-    )
-    return normalizer
+    return logsumexp(logits)
 
 
 def _candidate_logprob(
@@ -154,8 +155,36 @@ def _variant_logprob(
     values = [
         _candidate_logprob(logits, token_id, normalizer) for token_id in token_ids
     ]
-    maximum = max(values)
-    return maximum + math.log(sum(math.exp(value - maximum) for value in values))
+    return logsumexp(values)
+
+
+def _tensor_like(value: object) -> TensorLike:
+    if not isinstance(value, TensorLike):
+        raise ValueError("encoder tensor value is invalid")
+    return value
+
+
+def _is_integer_list(value: object) -> TypeGuard[list[int]]:
+    return isinstance(value, list) and all(
+        isinstance(item, int) and not isinstance(item, bool) for item in value
+    )
+
+
+def _integer_list(value: object) -> list[int]:
+    if not _is_integer_list(value):
+        raise ValueError("encoder token IDs are invalid")
+    return value
+
+
+def _float_list(value: object) -> list[float]:
+    if not isinstance(value, list):
+        raise ValueError("encoder logits are invalid")
+    result: list[float] = []
+    for item in value:
+        if isinstance(item, bool) or not isinstance(item, (int, float)):
+            raise ValueError("encoder logits are invalid")
+        result.append(float(item))
+    return result
 
 
 @dataclass(frozen=True, slots=True)
@@ -187,21 +216,18 @@ def score_transformers_once(
     )
     candidate_tokens = {
         label: tuple(
-            cast(
-                Sequence[int],
-                tokenizer(form, add_special_tokens=False)["input_ids"],
-            )
+            _integer_list(tokenizer(form, add_special_tokens=False)["input_ids"])
             for form in candidate_label_forms(label)
         )
         for label in candidate_labels()
     }
     tokenization_ms = (time.perf_counter_ns() - token_start) / 1_000_000
-    input_ids = cast(TensorLike, encoded["input_ids"])
-    input_id_list = cast(list[int], input_ids[0].tolist())
+    input_ids = _tensor_like(encoded["input_ids"])
+    input_id_list = _integer_list(input_ids[0].tolist())
     position = mask_position(input_id_list, tokenizer.mask_token_id)
     candidate_ids = validate_single_token_variants(candidate_tokens)
     model_inputs = {
-        name: cast(TensorLike, value).to(device) for name, value in encoded.items()
+        name: _tensor_like(value).to(device) for name, value in encoded.items()
     }
 
     _synchronize(torch_module)
@@ -212,8 +238,8 @@ def score_transformers_once(
     model_ms = (time.perf_counter_ns() - model_start) / 1_000_000
 
     logprob_start = time.perf_counter_ns()
-    logits = cast(TensorLike, outputs.logits)[0][position]
-    logits = cast(Sequence[float], logits.detach().float().cpu().tolist())
+    logits = _tensor_like(outputs.logits)[0][position]
+    logits = _float_list(logits.detach().float().cpu().tolist())
     logprobs = candidate_variant_logprobs(logits, candidate_ids)
     logprob_ms = (time.perf_counter_ns() - logprob_start) / 1_000_000
     text_to_logprob_ms = (time.perf_counter_ns() - total_start) / 1_000_000

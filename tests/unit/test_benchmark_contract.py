@@ -3,14 +3,20 @@ from __future__ import annotations
 import math
 import sys
 from types import SimpleNamespace
+from typing import ClassVar
 from urllib.request import Request
 
 import pytest
 
 import compute_cost_encoders_llms.benchmark.encoder as encoder_module
 import compute_cost_encoders_llms.benchmark.llm as llm_module
+from compute_cost_encoders_llms.benchmark._numerics import logsumexp
 from compute_cost_encoders_llms.benchmark.config import BenchmarkConfig, ConfigError
 from compute_cost_encoders_llms.benchmark.encoder import (
+    _float_list,
+    _integer_list,
+    _tensor_like,
+    _variant_logprob,
     candidate_logprobs,
     candidate_variant_logprobs,
     mask_position,
@@ -28,9 +34,16 @@ from compute_cost_encoders_llms.benchmark.example import (
 from compute_cost_encoders_llms.benchmark.llm import (
     LlamaClient,
     LlamaResponseError,
+    _entries,
+    _first_logprob_entry,
     _input_tokens,
+    _logsumexp,
     _post_json,
+    _require_candidate_scores,
     _timing_ms,
+    _timing_total,
+    _timing_value,
+    _validated_token_count,
     _with_top_logprobs,
     chat_template_request_payload,
     completion_request_payload,
@@ -130,6 +143,36 @@ class JsonResponse:
         return b'{"ok": true}'
 
 
+class EncodedText(str):
+    encodings: ClassVar[list[str]] = []
+
+    def encode(self, encoding: str = "utf-8", errors: str = "strict") -> bytes:
+        self.encodings.append(encoding)
+        return super().encode(encoding, errors)
+
+
+class EncodedBytes(bytes):
+    decodings: ClassVar[list[str]] = []
+
+    def decode(self, encoding: str = "utf-8", errors: str = "strict") -> str:
+        self.decodings.append(encoding)
+        return super().decode(encoding, errors)
+
+
+class EncodedJsonResponse(JsonResponse):
+    def read(self) -> EncodedBytes:
+        return EncodedBytes(b'{"ok": true}')
+
+
+class CapturedRequest:
+    def __init__(self, url: str, *, data: bytes, headers: dict[str, str]) -> None:
+        self.values: dict[str, object] = {
+            "url": url,
+            "data": data,
+            "headers": headers,
+        }
+
+
 def test_landuse_example_is_binary_and_prompts_share_the_sentence() -> None:
     labels = candidate_labels()
 
@@ -158,6 +201,16 @@ def test_prompts_ask_relevance_of_the_target_sentence() -> None:
 def test_candidate_label_forms_cover_case_variants() -> None:
     assert candidate_label_forms("yes") == ("yes", "Yes", "YES")
     assert candidate_label_forms("no") == ("no", "No", "NO")
+    with pytest.raises(
+        ValueError,
+        match=r"^unsupported candidate label: maybe$",
+    ):
+        candidate_label_forms("maybe")
+
+
+def test_prompts_reject_invalid_mask_tokens_with_exact_error() -> None:
+    with pytest.raises(ValueError, match=r"^mask_token must not be empty$"):
+        encoder_prompt("")
 
 
 def test_configuration_requires_immutable_revisions_and_positive_repetitions() -> None:
@@ -186,6 +239,23 @@ def test_configuration_requires_immutable_revisions_and_positive_repetitions() -
             encoder_revision="main",
             llm_revision=config.llm_revision,
             llama_cpp_revision=config.llama_cpp_revision,
+        )
+
+
+def test_configuration_run_settings_have_exact_validation_errors() -> None:
+    with pytest.raises(ConfigError, match=r"^repetitions must be positive$"):
+        BenchmarkConfig(
+            encoder_revision="c5955035435e2bf121cde7f3c8863ef52ff35d82",
+            llm_revision="8a7ee08e8b9bfb857107ecc25a5599d2f38b76f8",
+            llama_cpp_revision="test-llama-cpp-revision",
+            repetitions=0,
+        )
+    with pytest.raises(ConfigError, match=r"^warmups must be non-negative$"):
+        BenchmarkConfig(
+            encoder_revision="c5955035435e2bf121cde7f3c8863ef52ff35d82",
+            llm_revision="8a7ee08e8b9bfb857107ecc25a5599d2f38b76f8",
+            llama_cpp_revision="test-llama-cpp-revision",
+            warmups=-1,
         )
 
 
@@ -227,16 +297,25 @@ def test_validate_single_token_candidates_rejects_split_labels() -> None:
         "no": 12,
     }
 
-    with pytest.raises(ValueError, match="single token"):
+    with pytest.raises(
+        ValueError,
+        match=r"^yes must be represented by a single token$",
+    ):
         validate_single_token_candidates({"yes": [11, 13], "no": [12]})
 
 
 def test_mask_position_requires_exactly_one_mask() -> None:
     assert mask_position([3, 99, 4], 99) == 1
 
-    with pytest.raises(ValueError, match="exactly one"):
+    with pytest.raises(
+        ValueError,
+        match=r"^input must contain exactly one mask token$",
+    ):
         mask_position([3, 4], 99)
-    with pytest.raises(ValueError, match="exactly one"):
+    with pytest.raises(
+        ValueError,
+        match=r"^input must contain exactly one mask token$",
+    ):
         mask_position([99, 3, 99], 99)
 
 
@@ -252,10 +331,16 @@ def test_candidate_logprobs_returns_log_softmax_scores() -> None:
     assert candidate_logprobs([1.0], {"yes": 0})["yes"] == 0.0
 
 
+def test_shared_logsumexp_is_stable_for_large_values() -> None:
+    assert logsumexp([1000.0, 1001.0]) == pytest.approx(
+        1001.0 + math.log1p(math.exp(-1.0))
+    )
+
+
 def test_candidate_logprobs_rejects_empty_nonfinite_and_out_of_range_inputs() -> None:
-    with pytest.raises(ValueError, match="must not be empty"):
+    with pytest.raises(ValueError, match=r"^logits must not be empty$"):
         candidate_logprobs([], {"yes": 0, "no": 1})
-    with pytest.raises(ValueError, match="must be finite"):
+    with pytest.raises(ValueError, match=r"^logits must be finite$"):
         candidate_logprobs([math.nan, 1.0], {"yes": 0, "no": 1})
     with pytest.raises(ValueError, match="out of range"):
         candidate_logprobs([0.0], {"yes": 1, "no": 0})
@@ -284,8 +369,37 @@ def test_validate_single_token_variants_rejects_split_forms() -> None:
         "no": (3,),
     }
 
-    with pytest.raises(ValueError, match="single token"):
+    with pytest.raises(
+        ValueError,
+        match=r"^yes must be represented by a single token$",
+    ):
         validate_single_token_variants({"yes": ((1, 2),), "no": ((3,),)})
+    with pytest.raises(ValueError, match=r"^yes must have a single-token form$"):
+        validate_single_token_variants({"yes": (), "no": ((3,),)})
+    with pytest.raises(ValueError, match=r"^candidate token IDs must not be empty$"):
+        _variant_logprob([0.0], (), 0.0)
+
+
+def test_encoder_runtime_type_adapters_preserve_typed_inputs() -> None:
+    assert _integer_list([1, 2]) == [1, 2]
+    assert _float_list([1, 2.5]) == [1.0, 2.5]
+    tensor = FakeTensor([[1]])
+    assert _tensor_like(tensor) is tensor
+    with pytest.raises(ValueError, match=r"^encoder token IDs are invalid$"):
+        _integer_list([True])
+    with pytest.raises(ValueError, match=r"^encoder token IDs are invalid$"):
+        _integer_list("not a list")
+    with pytest.raises(ValueError, match=r"^encoder logits are invalid$"):
+        _float_list(["not a number"])
+    with pytest.raises(ValueError, match=r"^encoder logits are invalid$"):
+        _float_list((1.0,))
+    with pytest.raises(ValueError, match=r"^encoder tensor value is invalid$"):
+        _tensor_like(None)
+
+
+def test_variant_logprob_rejects_empty_token_ids_with_exact_error() -> None:
+    with pytest.raises(ValueError, match=r"^candidate token IDs must not be empty$"):
+        _variant_logprob([0.0], (), 0.0)
 
 
 def test_score_transformers_once_returns_masked_scores_and_timings(monkeypatch) -> None:
@@ -405,9 +519,16 @@ def test_parse_llama_current_completion_shape_reads_top_logprobs() -> None:
 
 
 def test_parse_llama_completion_rejects_missing_candidate() -> None:
-    with pytest.raises(LlamaResponseError, match="no"):
+    with pytest.raises(
+        LlamaResponseError,
+        match=r"^response is missing candidate logprobs: yes, no$",
+    ):
         parse_candidate_logprobs(
-            {"completion_probabilities": [{"probs": []}]},
+            {
+                "completion_probabilities": [
+                    {"probs": [{"token": "maybe", "logprob": -1.0}]}
+                ]
+            },
             ("yes", "no"),
         )
 
@@ -477,7 +598,10 @@ def test_parse_llama_skips_invalid_and_non_candidate_entries() -> None:
     ],
 )
 def test_parse_llama_rejects_missing_probability_shapes(payload) -> None:
-    with pytest.raises(LlamaResponseError, match="completion logprobs"):
+    with pytest.raises(
+        LlamaResponseError,
+        match=r"^response contains no completion logprobs$",
+    ):
         parse_candidate_logprobs(payload, ("yes", "no"))
 
 
@@ -486,13 +610,25 @@ def test_llama_response_helpers_reject_malformed_values(monkeypatch) -> None:
     assert _timing_ms({"timings": {"prompt_ms": 1.0}}) is None
     assert _timing_ms({"timings": {"predicted_ms": 1.0}}) is None
     assert _timing_ms({"timings": {"prompt_ms": 0.0, "predicted_ms": 0.0}}) == 0.0
-    with pytest.raises(LlamaResponseError, match="timings are not numeric"):
+    with pytest.raises(
+        LlamaResponseError,
+        match=r"^llama\.cpp timings are not numeric$",
+    ):
         _timing_ms({"timings": {"prompt_ms": "slow"}})
-    with pytest.raises(LlamaResponseError, match="timings are not numeric"):
+    with pytest.raises(
+        LlamaResponseError,
+        match=r"^llama\.cpp timings are not numeric$",
+    ):
         _timing_ms({"timings": {"prompt_ms": True}})
-    with pytest.raises(LlamaResponseError, match="timings are invalid"):
+    with pytest.raises(
+        LlamaResponseError,
+        match=r"^llama\.cpp timings are invalid$",
+    ):
         _timing_ms({"timings": {"prompt_ms": -1.0, "predicted_ms": 1.0}})
-    with pytest.raises(LlamaResponseError, match="timings are invalid"):
+    with pytest.raises(
+        LlamaResponseError,
+        match=r"^llama\.cpp timings are invalid$",
+    ):
         _timing_ms(
             {
                 "timings": {
@@ -506,12 +642,21 @@ def test_llama_response_helpers_reject_malformed_values(monkeypatch) -> None:
     assert _input_tokens({"usage": {"prompt_tokens": 0}}) == 0
     assert _input_tokens({"tokens_evaluated": 18}) == 18
     assert _input_tokens({"timings": {"prompt_n": 19}}) == 19
-    with pytest.raises(LlamaResponseError, match="token count is invalid"):
+    with pytest.raises(
+        LlamaResponseError,
+        match=r"^llama\.cpp prompt token count is invalid$",
+    ):
         _input_tokens({"usage": {"prompt_tokens": -1}})
-    with pytest.raises(LlamaResponseError, match="token count is invalid"):
+    with pytest.raises(
+        LlamaResponseError,
+        match=r"^llama\.cpp prompt token count is invalid$",
+    ):
         _input_tokens({"usage": {"prompt_tokens": True}})
     assert _with_top_logprobs([{"token": "yes"}]) == [{"token": "yes"}]
-    with pytest.raises(LlamaResponseError, match="entry is not an object"):
+    with pytest.raises(
+        LlamaResponseError,
+        match=r"^token probability entry is not an object$",
+    ):
         _with_top_logprobs([None])
 
     class Response:
@@ -534,8 +679,93 @@ def test_llama_response_helpers_reject_malformed_values(monkeypatch) -> None:
     monkeypatch.setattr(
         llm_module, "urlopen", lambda *_args, **_kwargs: InvalidResponse()
     )
-    with pytest.raises(LlamaResponseError, match="not an object"):
+    with pytest.raises(
+        LlamaResponseError,
+        match=r"^llama\.cpp response is not an object$",
+    ):
         _post_json("http://example.test", {"x": 1}, 1.0)
+
+
+def test_llama_wire_contract_uses_explicit_utf8_and_header_spelling(
+    monkeypatch,
+) -> None:
+    EncodedText.encodings = []
+    EncodedBytes.decodings = []
+    captured_requests: list[CapturedRequest] = []
+    monkeypatch.setattr(llm_module.json, "dumps", lambda _payload: EncodedText("{}"))
+    monkeypatch.setattr(llm_module, "Request", CapturedRequest)
+    monkeypatch.setattr(
+        llm_module,
+        "urlopen",
+        lambda request, **_kwargs: (
+            captured_requests.append(request) or EncodedJsonResponse()
+        ),
+    )
+
+    assert _post_json("http://example.test", {"x": 1}, 1.0) == {"ok": True}
+    assert EncodedText.encodings == ["utf-8"]
+    assert EncodedBytes.decodings == ["utf-8"]
+    assert captured_requests[0].values["headers"] == {
+        "Content-Type": "application/json"
+    }
+
+
+def test_llama_response_helper_error_messages_are_stable() -> None:
+    with pytest.raises(
+        LlamaResponseError,
+        match=r"^llama\.cpp template response has no rendered prompt$",
+    ):
+        llm_module._rendered_prompt({"prompt": 1})
+    with pytest.raises(
+        LlamaResponseError,
+        match=r"^llama\.cpp timings are not numeric$",
+    ):
+        _timing_value({"prompt_ms": "slow"}, "prompt_ms")
+    with pytest.raises(
+        LlamaResponseError,
+        match=r"^llama\.cpp timings are invalid$",
+    ):
+        _timing_value({"prompt_ms": -1.0}, "prompt_ms")
+    with pytest.raises(
+        LlamaResponseError,
+        match=r"^llama\.cpp timings are invalid$",
+    ):
+        _timing_total(sys.float_info.max, sys.float_info.max)
+    with pytest.raises(
+        LlamaResponseError,
+        match=r"^llama\.cpp prompt token count is invalid$",
+    ):
+        _validated_token_count("18")
+    with pytest.raises(
+        LlamaResponseError,
+        match=r"^response contains no completion logprobs$",
+    ):
+        _entries({})
+    with pytest.raises(
+        LlamaResponseError,
+        match=r"^response contains no token probabilities$",
+    ):
+        _first_logprob_entry([])
+    with pytest.raises(
+        LlamaResponseError,
+        match=r"^token probability entry is not an object$",
+    ):
+        _first_logprob_entry([None])
+    with pytest.raises(
+        LlamaResponseError,
+        match=r"^response is missing candidate logprobs: no$",
+    ):
+        _require_candidate_scores({"yes": [-1.0]}, ("yes", "no"))
+    with pytest.raises(
+        LlamaResponseError,
+        match=r"^response is missing candidate logprobs: yes, no$",
+    ):
+        _require_candidate_scores({}, ("yes", "no"))
+    with pytest.raises(
+        LlamaResponseError,
+        match=r"^candidate logprobs must not be empty$",
+    ):
+        _logsumexp([])
 
 
 def test_post_json_preserves_request_contract(monkeypatch) -> None:
@@ -583,7 +813,7 @@ def test_llama_client_returns_scores_and_server_timing(monkeypatch) -> None:
 
     ticks = iter((10_000_000, 11_000_000, 12_000_000, 13_000_000))
     monkeypatch.setattr(llm_module.time, "perf_counter_ns", lambda: next(ticks))
-    score = LlamaClient("http://127.0.0.1:8080", request=request).score(seed=7)
+    score = LlamaClient("http://127.0.0.1:8080/X///", request=request).score(seed=7)
 
     assert score.logprobs == {"yes": -0.25, "no": -1.25}
     assert score.tokenization_ms is None
@@ -591,11 +821,14 @@ def test_llama_client_returns_scores_and_server_timing(monkeypatch) -> None:
     assert score.logprob_ms == 1.0
     assert score.text_to_logprob_ms == 3.0
     assert score.input_tokens == 18
-    assert requests[0][0] == "http://127.0.0.1:8080/apply-template"
+    assert requests[0][0] == "http://127.0.0.1:8080/X/apply-template"
     assert requests[0][1] == chat_template_request_payload(llm_prompt())
     assert requests[0][1]["chat_template_kwargs"] == {"enable_thinking": False}
-    assert requests[1][0] == "http://127.0.0.1:8080/completion"
+    assert requests[0][2] == 300.0
+    assert requests[1][0] == "http://127.0.0.1:8080/X/completion"
+    assert requests[1][2] == 300.0
     assert requests[1][1]["prompt"] == "rendered prompt"
+    assert requests[1][1]["seed"] == 7
 
 
 def test_chat_template_payload_contains_only_the_fixed_user_message() -> None:

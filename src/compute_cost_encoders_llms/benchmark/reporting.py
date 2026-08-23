@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from collections.abc import Iterable, Mapping
 from pathlib import Path
-from typing import TypedDict, cast
+from typing import TypedDict
 
 from .measurement import (
     LatencySummary,
@@ -29,10 +29,33 @@ class SummaryDocument(TypedDict):
     models: list[ModelSummary]
 
 
+class _JsonOptions(TypedDict, total=False):
+    ensure_ascii: bool
+    indent: int
+    separators: tuple[str, str]
+    sort_keys: bool
+
+
+def _json_options(*, compact: bool) -> _JsonOptions:
+    if not isinstance(compact, bool):
+        raise TypeError("compact must be a boolean")
+    options: _JsonOptions = {
+        "ensure_ascii": not bool(1),
+        "sort_keys": True,
+    }
+    if compact:
+        options["separators"] = (",", ":")
+    else:
+        options["indent"] = 2
+    if options["ensure_ascii"] is not False:
+        raise ValueError("JSON must preserve Unicode")
+    return options
+
+
 def json_line(record: Mapping[str, object]) -> str:
     """Serialize one stable JSONL record."""
 
-    return json.dumps(record, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+    return json.dumps(record, **_json_options(compact=True))
 
 
 def build_summary(records: Iterable[Mapping[str, object]]) -> SummaryDocument:
@@ -89,11 +112,12 @@ def _timing_values(
     records: list[MeasurementRecord],
     field: str,
 ) -> list[float]:
-    return [
-        float(cast(int | float, value))
-        for record in records
-        if (value := cast(Mapping[str, object], record)[field]) is not None
-    ]
+    values: list[float] = []
+    for record in records:
+        value = _number_value(record.get(field))
+        if value is not None:
+            values.append(value)
+    return values
 
 
 def _mean_score(records: list[MeasurementRecord], label: str) -> float:
@@ -109,9 +133,7 @@ def _optional_latency_summary(
 def write_json(path: Path, document: Mapping[str, object]) -> None:
     """Write one deterministic JSON document."""
 
-    path.write_text(
-        json.dumps(document, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
-    )
+    path.write_text(json.dumps(document, **_json_options(compact=False)) + "\n")
 
 
 def write_jsonl(path: Path, records: Iterable[Mapping[str, object]]) -> None:
@@ -140,9 +162,11 @@ def _latex_escape(value: object) -> str:
 def render_latex_summary(summary: Mapping[str, object]) -> str:
     """Render one compact LaTeX summary table."""
 
-    model = _latex_escape(cast(str, summary["model"]))
-    median = float(cast(float, summary["median"]))
-    decision = _latex_escape(cast(str, summary["decision"]))
+    model = _latex_escape(summary["model"])
+    median = _number_value(summary["median"])
+    if median is None:
+        raise TypeError("median must be numeric")
+    decision = _latex_escape(summary["decision"])
     return_value = (
         "\\begin{tabular}{lr}\nModel & "
         + model
@@ -223,14 +247,14 @@ def render_latex_document(
 
 def _mapping_field(document: Mapping[str, object], field: str) -> Mapping[str, object]:
     value = document.get(field)
-    return cast(Mapping[str, object], value) if isinstance(value, Mapping) else {}
+    return value if isinstance(value, Mapping) else {}
 
 
 def _model_summaries(summary: Mapping[str, object]) -> list[ModelSummary]:
     value = summary.get("models")
     if not isinstance(value, list):
         return []
-    return [cast(ModelSummary, item) for item in value if isinstance(item, Mapping)]
+    return [item for item in value if isinstance(item, Mapping)]
 
 
 def _number_text(value: object) -> str:
@@ -309,7 +333,7 @@ def _backend_runtime(
     by_backend = _mapping_field(manifest, "runtime_by_backend")
     selected = by_backend.get(backend)
     if isinstance(selected, Mapping):
-        return cast(Mapping[str, object], selected)
+        return selected
     return _mapping_field(manifest, "runtime")
 
 

@@ -1,14 +1,28 @@
 from __future__ import annotations
 
 import json
+import sys
+from collections.abc import Mapping
+from pathlib import Path
+from typing import cast
 
 import pytest
+import scripts.render_report as report_module
 from scripts.render_report import (
+    _as_mapping,
     _checkpoint_metrics,
     _non_negative_count,
     _positive_count,
     _read_json,
+    _require_binary_keys,
+    _validate_decision_counts,
+    _validate_latency_order,
+    _validate_latency_summary,
+    _validate_mean_logprobs,
+    _validated_decision_counts,
+    _validated_summary_models,
     build_checkpoint_metadata,
+    main,
     merge_artifacts,
     render_report,
 )
@@ -59,9 +73,23 @@ def test_build_checkpoint_metadata_is_publishable_and_reproducible() -> None:
         "step": 64,
     }
 
+    x_prefixed = build_checkpoint_metadata(
+        merged,
+        config_revision="config",
+        dataset_revision="dataset",
+        model_revision="model",
+        artifact_prefix="XrunsX",
+    )
+    assert x_prefixed["artifact_uri"] == (
+        "hf://buckets/NoeFlandre/compute-cost-encoders-llms/XrunsX"
+    )
+
 
 def test_build_checkpoint_metadata_rejects_empty_artifact_prefix() -> None:
-    with pytest.raises(ValueError, match="artifact prefix"):
+    with pytest.raises(
+        ValueError,
+        match=r"^artifact prefix must be non-empty and traversal-free$",
+    ):
         build_checkpoint_metadata(
             {"manifest": {}, "summary": {"models": []}},
             config_revision="sha256:config",
@@ -69,7 +97,10 @@ def test_build_checkpoint_metadata_rejects_empty_artifact_prefix() -> None:
             model_revision="model",
             artifact_prefix="",
         )
-    with pytest.raises(ValueError, match="artifact prefix"):
+    with pytest.raises(
+        ValueError,
+        match=r"^artifact prefix must be non-empty and traversal-free$",
+    ):
         build_checkpoint_metadata(
             {"manifest": {}, "summary": {"models": []}},
             config_revision="sha256:config",
@@ -86,7 +117,10 @@ def test_build_checkpoint_metadata_rejects_empty_artifact_prefix() -> None:
         },
         "summary": {"models": []},
     }
-    with pytest.raises(ValueError, match="non-negative integer"):
+    with pytest.raises(
+        ValueError,
+        match=r"^merged artifact field is not a non-negative integer: seed$",
+    ):
         build_checkpoint_metadata(
             {**valid_shape, "manifest": {**valid_shape["manifest"], "seed": -1}},
             config_revision="sha256:config",
@@ -94,7 +128,10 @@ def test_build_checkpoint_metadata_rejects_empty_artifact_prefix() -> None:
             model_revision="model",
             artifact_prefix="runs/example",
         )
-    with pytest.raises(ValueError, match="non-negative integer"):
+    with pytest.raises(
+        ValueError,
+        match=r"^merged artifact field is not a non-negative integer: seed$",
+    ):
         build_checkpoint_metadata(
             {**valid_shape, "manifest": {**valid_shape["manifest"], "seed": True}},
             config_revision="sha256:config",
@@ -122,7 +159,10 @@ def test_build_checkpoint_metadata_rejects_empty_artifact_prefix() -> None:
         artifact_prefix="runs/example",
     )
     assert zero_seed["seed"] == 0
-    with pytest.raises(ValueError, match="text"):
+    with pytest.raises(
+        ValueError,
+        match=r"^merged artifact field is not text: source_commit$",
+    ):
         build_checkpoint_metadata(
             {
                 **valid_shape,
@@ -133,7 +173,10 @@ def test_build_checkpoint_metadata_rejects_empty_artifact_prefix() -> None:
             model_revision="model",
             artifact_prefix="runs/example",
         )
-    with pytest.raises(ValueError, match="object"):
+    with pytest.raises(
+        ValueError,
+        match=r"^merged artifact field is not an object: manifest$",
+    ):
         build_checkpoint_metadata(
             {"manifest": [], "summary": {}},
             config_revision="sha256:config",
@@ -141,8 +184,16 @@ def test_build_checkpoint_metadata_rejects_empty_artifact_prefix() -> None:
             model_revision="model",
             artifact_prefix="runs/example",
         )
-    with pytest.raises(ValueError, match="model results"):
+    with pytest.raises(
+        ValueError,
+        match=r"^merged summary must contain model results$",
+    ):
         _checkpoint_metrics({"models": []})
+    with pytest.raises(
+        ValueError,
+        match=r"^merged artifact field is not an object: model result$",
+    ):
+        _checkpoint_metrics({"models": [None]})
 
 
 def test_render_report_writes_latex_and_checkpoint(tmp_path, monkeypatch) -> None:
@@ -198,12 +249,62 @@ def test_render_report_writes_latex_and_checkpoint(tmp_path, monkeypatch) -> Non
 
     assert "Binary Land-Use Logprob Benchmark" in output.read_text()
     assert "Is this sentence relevant for a land use description?" in output.read_text()
-    assert json.loads(checkpoint.read_text())["complete"] is True
+    checkpoint_text = checkpoint.read_text()
+    checkpoint_document = json.loads(checkpoint_text)
+    assert checkpoint_document["complete"] is True
+    assert checkpoint_document["config_revision"] == "sha256:config"
+    assert checkpoint_document["dataset_revision"] == "made-up-landuse-example-v1"
+    assert checkpoint_document["model_revision"] == "c" * 40
+    assert (
+        checkpoint_text
+        == json.dumps(checkpoint_document, indent=2, sort_keys=True) + "\n"
+    )
 
     invalid = tmp_path / "invalid.json"
     invalid.write_text("[]")
     with pytest.raises(ValueError, match="not an object"):
         _read_json(invalid)
+
+
+def test_render_report_reads_canonical_artifact_names(tmp_path, monkeypatch) -> None:
+    manifest = {"source_commit": "a" * 40, "example": {"sentence": "x"}}
+    summary = {
+        "models": [
+            {
+                "model": "encoder",
+                "latency": {
+                    "count": 1,
+                    "minimum": 1.0,
+                    "median": 1.0,
+                    "p05": 1.0,
+                    "p95": 1.0,
+                    "maximum": 1.0,
+                    "mean": 1.0,
+                    "stdev": 0.0,
+                },
+                "mean_logprobs": {"yes": -0.1, "no": -1.0},
+                "decision_counts": {"yes": 1, "no": 0},
+            }
+        ]
+    }
+    paths: list[Path] = []
+
+    def read_json(path: Path) -> Mapping[str, object]:
+        paths.append(path)
+        return manifest if path.name == "manifest.json" else summary
+
+    monkeypatch.setattr(report_module, "_read_json", read_json)
+    render_report(
+        tmp_path / "encoder",
+        tmp_path / "llm",
+        tmp_path / "report.tex",
+    )
+    assert paths == [
+        tmp_path / "encoder" / "manifest.json",
+        tmp_path / "llm" / "manifest.json",
+        tmp_path / "encoder" / "summary.json",
+        tmp_path / "llm" / "summary.json",
+    ]
 
 
 def test_merge_artifacts_rejects_incomplete_backend_summaries() -> None:
@@ -250,6 +351,199 @@ def test_merge_artifacts_rejects_incomplete_backend_summaries() -> None:
         )
 
 
+def test_merge_artifacts_preserves_backend_runtime_contract(monkeypatch) -> None:
+    encoder_manifest = {
+        "source_commit": "a" * 40,
+        "example": {"sentence": "x"},
+        "runtime": {"device": "cuda"},
+    }
+    llm_manifest = {
+        **encoder_manifest,
+        "runtime": {"device": "cpu"},
+    }
+    encoder_model = {
+        "model": "encoder",
+        "latency": {
+            "count": 1,
+            "minimum": 1.0,
+            "median": 1.0,
+            "p05": 1.0,
+            "p95": 1.0,
+            "maximum": 1.0,
+            "mean": 1.0,
+            "stdev": 0.0,
+        },
+        "mean_logprobs": {"yes": -0.1, "no": -1.0},
+        "decision_counts": {"yes": 1, "no": 0},
+    }
+    llm_model = {**encoder_model, "model": "llm"}
+    merged = merge_artifacts(
+        encoder_manifest,
+        llm_manifest,
+        {"models": [encoder_model]},
+        {"models": [llm_model]},
+    )
+    manifest = cast(dict[str, object], merged["manifest"])
+    assert manifest["runtime_by_backend"] == {
+        "encoder": {"device": "cuda"},
+        "llm": {"device": "cpu"},
+    }
+
+    without_runtime = merge_artifacts(
+        {key: value for key, value in encoder_manifest.items() if key != "runtime"},
+        {key: value for key, value in llm_manifest.items() if key != "runtime"},
+        {"models": [encoder_model]},
+        {"models": [llm_model]},
+    )
+    without_runtime_manifest = cast(dict[str, object], without_runtime["manifest"])
+    assert without_runtime_manifest["runtime_by_backend"] == {
+        "encoder": {},
+        "llm": {},
+    }
+
+    captured: list[tuple[object, str]] = []
+
+    def capture_models(value: object, backend: str) -> list[dict[str, object]]:
+        captured.append((value, backend))
+        return []
+
+    monkeypatch.setattr(report_module, "_validated_summary_models", capture_models)
+    assert merge_artifacts(encoder_manifest, llm_manifest, {}, {})["summary"] == {
+        "models": []
+    }
+    assert captured == [([], "encoder"), ([], "llm")]
+
+
+def test_merge_artifacts_rejects_identity_and_model_contract_violations() -> None:
+    manifest = {"source_commit": "a" * 40, "example": {"sentence": "x"}}
+    complete = {
+        "models": [
+            {
+                "model": "encoder",
+                "latency": {
+                    "count": 1,
+                    "minimum": 1.0,
+                    "median": 1.0,
+                    "p05": 1.0,
+                    "p95": 1.0,
+                    "maximum": 1.0,
+                    "mean": 1.0,
+                    "stdev": 0.0,
+                },
+                "mean_logprobs": {"yes": -0.1, "no": -1.0},
+                "decision_counts": {"yes": 1, "no": 0},
+            }
+        ]
+    }
+    with pytest.raises(
+        ValueError,
+        match=r"^source commit differs between backend runs$",
+    ):
+        merge_artifacts(
+            manifest,
+            {**manifest, "source_commit": "b" * 40},
+            complete,
+            complete,
+        )
+    with pytest.raises(
+        ValueError,
+        match=r"^example differs between backend runs$",
+    ):
+        merge_artifacts(
+            manifest,
+            {**manifest, "example": {"sentence": "y"}},
+            complete,
+            complete,
+        )
+    with pytest.raises(
+        ValueError,
+        match=r"^merged artifact field is not an object: encoder model result$",
+    ):
+        merge_artifacts(
+            manifest,
+            manifest,
+            {"models": [None]},
+            complete,
+        )
+
+
+def test_render_report_validation_contracts() -> None:
+    with pytest.raises(
+        ValueError,
+        match=r"^latency field is invalid: minimum$",
+    ):
+        _validate_latency_summary(
+            {"latency": {"count": 1}, "mean_logprobs": {}, "decision_counts": {}}
+        )
+    with pytest.raises(
+        ValueError,
+        match=r"^latency quantiles are inconsistent$",
+    ):
+        _validate_latency_order(
+            {
+                "minimum": 1.0,
+                "p05": 3.0,
+                "median": 2.0,
+                "p95": 4.0,
+                "maximum": 5.0,
+                "mean": 3.0,
+            }
+        )
+    with pytest.raises(
+        ValueError,
+        match=r"^latency mean is inconsistent$",
+    ):
+        _validate_latency_order(
+            {
+                "minimum": 1.0,
+                "p05": 1.0,
+                "median": 1.0,
+                "p95": 1.0,
+                "maximum": 2.0,
+                "mean": 3.0,
+            }
+        )
+    with pytest.raises(
+        ValueError,
+        match=r"^mean_logprobs must contain yes and no$",
+    ):
+        _validate_mean_logprobs(
+            {"mean_logprobs": {"yes": -1.0}, "latency": {}, "decision_counts": {}}
+        )
+    with pytest.raises(
+        ValueError,
+        match=r"^mean_logprobs must be finite$",
+    ):
+        _validate_mean_logprobs({"mean_logprobs": {"yes": float("nan"), "no": -1.0}})
+    with pytest.raises(
+        ValueError,
+        match=r"^decision_counts must sum to latency count$",
+    ):
+        _validate_decision_counts(
+            {"latency": {"count": 2}, "decision_counts": {"yes": 1, "no": 0}}
+        )
+    with pytest.raises(
+        ValueError,
+        match=r"^decision_counts must contain yes and no$",
+    ):
+        _validated_decision_counts({"yes": 1})
+    with pytest.raises(
+        ValueError,
+        match=r"^mean_logprobs must contain yes and no$",
+    ):
+        _require_binary_keys({"yes": -1.0}, "mean_logprobs")
+    with pytest.raises(
+        ValueError,
+        match=r"^merged artifact field is not an object: field$",
+    ):
+        _as_mapping(None, "field")
+    with pytest.raises(
+        ValueError,
+        match=r"^merged artifact field is not an object: encoder model result$",
+    ):
+        _validated_summary_models([None], "encoder")
+
+
 def test_merge_artifacts_rejects_inconsistent_latency_order() -> None:
     manifest = {"source_commit": "a" * 40, "example": {"sentence": "x"}}
     model = {
@@ -268,7 +562,10 @@ def test_merge_artifacts_rejects_inconsistent_latency_order() -> None:
         "decision_counts": {"yes": 2, "no": 0},
     }
 
-    with pytest.raises(ValueError, match="quantiles"):
+    with pytest.raises(
+        ValueError,
+        match=r"^latency quantiles are inconsistent$",
+    ):
         merge_artifacts(
             manifest,
             manifest,
@@ -284,7 +581,7 @@ def test_merge_artifacts_rejects_inconsistent_latency_order() -> None:
         **valid_order,
         "latency": {**valid_order["latency"], "mean": 10.0},
     }
-    with pytest.raises(ValueError, match="mean"):
+    with pytest.raises(ValueError, match=r"^latency mean is inconsistent$"):
         merge_artifacts(
             manifest,
             manifest,
@@ -296,7 +593,7 @@ def test_merge_artifacts_rejects_inconsistent_latency_order() -> None:
         **valid_order,
         "mean_logprobs": {"yes": "1", "no": -1.0},
     }
-    with pytest.raises(ValueError, match="mean_logprobs"):
+    with pytest.raises(ValueError, match=r"^mean_logprobs must be finite$"):
         merge_artifacts(
             manifest,
             manifest,
@@ -308,7 +605,10 @@ def test_merge_artifacts_rejects_inconsistent_latency_order() -> None:
         **valid_order,
         "latency": {**valid_order["latency"], "minimum": -1.0},
     }
-    with pytest.raises(ValueError, match="latency field"):
+    with pytest.raises(
+        ValueError,
+        match=r"^latency field is invalid: minimum$",
+    ):
         merge_artifacts(
             manifest,
             manifest,
@@ -340,11 +640,74 @@ def test_merge_artifacts_rejects_inconsistent_latency_order() -> None:
 
 @pytest.mark.parametrize("value", [True, 0, "1"])
 def test_positive_latency_count_rejects_invalid_values(value: object) -> None:
-    with pytest.raises(ValueError, match="positive integer"):
+    with pytest.raises(
+        ValueError,
+        match=r"^latency count must be a positive integer$",
+    ):
         _positive_count(value)
 
 
 @pytest.mark.parametrize("value", [True, -1, "1"])
 def test_decision_count_rejects_invalid_values(value: object) -> None:
-    with pytest.raises(ValueError, match="non-negative integers"):
+    with pytest.raises(
+        ValueError,
+        match=r"^decision_counts must be non-negative integers$",
+    ):
         _non_negative_count(value)
+
+
+def test_render_report_cli_contract(monkeypatch) -> None:
+    calls: list[tuple[Path, Path, Path, Path | None]] = []
+
+    def capture(
+        encoder_dir: Path,
+        llm_dir: Path,
+        output: Path,
+        checkpoint: Path | None = None,
+    ) -> None:
+        calls.append((encoder_dir, llm_dir, output, checkpoint))
+
+    monkeypatch.setattr(report_module, "render_report", capture)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "render_report",
+            "--encoder-dir",
+            "encoder",
+            "--llm-dir",
+            "llm",
+            "--output",
+            "report.tex",
+            "--checkpoint",
+            "checkpoint.json",
+        ],
+    )
+    main()
+    assert calls == [
+        (Path("encoder"), Path("llm"), Path("report.tex"), Path("checkpoint.json"))
+    ]
+
+
+@pytest.mark.parametrize("missing", ["--encoder-dir", "--llm-dir", "--output"])
+def test_render_report_cli_requires_core_paths(monkeypatch, missing: str) -> None:
+    argv = ["render_report"]
+    values = {
+        "--encoder-dir": "encoder",
+        "--llm-dir": "llm",
+        "--output": "report.tex",
+    }
+    for option, value in values.items():
+        if option != missing:
+            argv.extend([option, value])
+    monkeypatch.setattr(sys, "argv", argv)
+    with pytest.raises(SystemExit):
+        main()
+
+
+def test_render_report_cli_help_uses_module_description(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(sys, "argv", ["render_report", "--help"])
+    with pytest.raises(SystemExit) as error:
+        main()
+    assert error.value.code == 0
+    assert "Merge verified backend artifacts" in capsys.readouterr().out

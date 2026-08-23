@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import TypeGuard
 from urllib.request import Request, urlopen
 
+from ._numerics import logsumexp
 from .example import candidate_labels, llm_prompt
 
 
@@ -99,14 +100,13 @@ class LlamaClient:
             self._timeout_s,
         )
         model_ms = _timing_ms(response)
-        tokenization_ms = None
         logprob_start = time.perf_counter_ns()
         logprobs = parse_candidate_logprobs(response, candidate_labels())
         logprob_ms = (time.perf_counter_ns() - logprob_start) / 1_000_000
         text_to_logprob_ms = (time.perf_counter_ns() - total_start) / 1_000_000
         return LlamaScore(
             logprobs=logprobs,
-            tokenization_ms=tokenization_ms,
+            tokenization_ms=None,
             model_ms=model_ms,
             logprob_ms=logprob_ms,
             text_to_logprob_ms=text_to_logprob_ms,
@@ -317,5 +317,4 @@ def _missing_candidates(
 def _logsumexp(values: Sequence[float]) -> float:
     if not values:
         raise LlamaResponseError("candidate logprobs must not be empty")
-    maximum = max(values)
-    return maximum + math.log(sum(math.exp(value - maximum) for value in values))
+    return logsumexp(values)
