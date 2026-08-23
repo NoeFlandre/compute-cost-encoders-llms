@@ -5,11 +5,8 @@ import os
 import platform
 import re
 from dataclasses import dataclass
-from typing import Protocol, TypeGuard
 
-
-class CudaApi(Protocol):
-    """Marker for the CUDA object probed through its optional attributes."""
+type CudaApi = object
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,13 +72,9 @@ def _dtype(torch_module: object, name: str) -> object:
 
 def _cuda(torch_module: object) -> CudaApi:
     cuda = getattr(torch_module, "cuda", None)
-    if not _is_cuda_api(cuda):
+    if cuda is None:
         raise RuntimeError("torch does not expose CUDA")
     return cuda
-
-
-def _is_cuda_api(value: object) -> TypeGuard[CudaApi]:
-    return value is not None
 
 
 def _cuda_available(cuda: CudaApi) -> bool:

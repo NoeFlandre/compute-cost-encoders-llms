@@ -972,6 +972,10 @@ def test_runtime_metadata_driver_and_device_helpers_fail_closed() -> None:
     )
 
 
+def test_cuda_boundary_declares_dynamic_object_contract() -> None:
+    assert getattr(runtime_module.CudaApi, "__value__", None) is object
+
+
 def test_cuda_adapter_preserves_identity_and_error_message() -> None:
     cuda = SimpleNamespace()
     assert _cuda(SimpleNamespace(cuda=cuda)) is cuda
