@@ -6,12 +6,12 @@ from __future__ import annotations
 import argparse
 import itertools
 import json
-import math
 import os
 from collections.abc import Mapping
 from pathlib import Path
 from typing import TypeGuard
 
+from compute_cost_encoders_llms.benchmark._numerics import _is_finite_number
 from compute_cost_encoders_llms.benchmark.reporting import render_latex_document
 
 PROJECT_BUCKET_URI = "hf://buckets/NoeFlandre/compute-cost-encoders-llms"
@@ -139,14 +139,6 @@ def _non_negative_count(value: object) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         raise ValueError("decision_counts must be non-negative integers")
     return value
-
-
-def _is_finite_number(value: object) -> TypeGuard[int | float]:
-    return (
-        isinstance(value, (int, float))
-        and not isinstance(value, bool)
-        and math.isfinite(float(value))
-    )
 
 
 def _is_finite_non_negative(value: object) -> TypeGuard[int | float]:

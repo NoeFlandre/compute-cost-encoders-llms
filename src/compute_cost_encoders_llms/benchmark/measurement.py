@@ -7,6 +7,8 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import NotRequired, TypedDict, TypeGuard
 
+from ._numerics import _is_finite_number
+
 
 class MeasurementError(ValueError):
     """Raised when a measurement record cannot be trusted."""
@@ -119,14 +121,6 @@ def _validate_timing_field(field: str, value: object) -> None:
         raise MeasurementError(f"{field} must be finite")
     if float(value) < 0:
         raise MeasurementError(f"{field} must be non-negative")
-
-
-def _is_finite_number(value: object) -> TypeGuard[int | float]:
-    return (
-        isinstance(value, (int, float))
-        and not isinstance(value, bool)
-        and math.isfinite(float(value))
-    )
 
 
 def _validate_total_covers_components(record: Mapping[str, object]) -> None:

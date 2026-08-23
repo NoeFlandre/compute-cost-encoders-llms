@@ -9,6 +9,7 @@ from urllib.request import Request
 
 import pytest
 
+import compute_cost_encoders_llms.benchmark._numerics as numerics_module
 import compute_cost_encoders_llms.benchmark.encoder as encoder_module
 import compute_cost_encoders_llms.benchmark.llm as llm_module
 from compute_cost_encoders_llms.benchmark._numerics import logsumexp
@@ -336,6 +337,17 @@ def test_shared_logsumexp_is_stable_for_large_values() -> None:
     assert logsumexp([1000.0, 1001.0]) == pytest.approx(
         1001.0 + math.log1p(math.exp(-1.0))
     )
+
+
+def test_shared_finite_number_predicate_rejects_bool_and_nonfinite_values() -> None:
+    predicate = getattr(numerics_module, "_is_finite_number", None)
+
+    assert callable(predicate)
+    assert predicate(1) is True
+    assert predicate(1.5) is True
+    assert predicate(True) is False
+    assert predicate(math.nan) is False
+    assert predicate("1") is False
 
 
 def test_candidate_logprobs_rejects_empty_nonfinite_and_out_of_range_inputs() -> None:
