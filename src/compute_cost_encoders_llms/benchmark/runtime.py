@@ -77,24 +77,22 @@ def _cuda(torch_module: object) -> CudaApi:
     return cuda
 
 
-def _cuda_available(cuda: CudaApi) -> bool:
-    checker = getattr(cuda, "is_available", None)
+def _safe_cuda_bool(cuda: CudaApi, attribute: str) -> bool:
+    checker = getattr(cuda, attribute, None)
     if not callable(checker):
         return False
     try:
         return bool(checker())
     except (AttributeError, RuntimeError, TypeError):
         return False
+
+
+def _cuda_available(cuda: CudaApi) -> bool:
+    return _safe_cuda_bool(cuda, "is_available")
 
 
 def _bf16_supported(cuda: CudaApi) -> bool:
-    checker = getattr(cuda, "is_bf16_supported", None)
-    if not callable(checker):
-        return False
-    try:
-        return bool(checker())
-    except (AttributeError, RuntimeError, TypeError):
-        return False
+    return _safe_cuda_bool(cuda, "is_bf16_supported")
 
 
 def _fp16_supported(cuda: CudaApi) -> bool:

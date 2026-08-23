@@ -757,6 +757,21 @@ def test_cuda_precision_prefers_bfloat16_only_when_supported() -> None:
     assert precision.torch_dtype is FakePrecisionTorch.bfloat16
 
 
+def test_cuda_boolean_checks_share_safe_probe(monkeypatch) -> None:
+    calls: list[str] = []
+    cuda = cast(CudaApi, SimpleNamespace())
+
+    def probe(_cuda: CudaApi, attribute: str) -> bool:
+        calls.append(attribute)
+        return True
+
+    monkeypatch.setattr(runtime_module, "_safe_cuda_bool", probe, raising=False)
+
+    assert runtime_module._cuda_available(cuda) is True
+    assert runtime_module._bf16_supported(cuda) is True
+    assert calls == ["is_available", "is_bf16_supported"]
+
+
 def test_cuda_precision_rejects_unavailable_cuda() -> None:
     def fail() -> bool:
         raise RuntimeError("unavailable")
