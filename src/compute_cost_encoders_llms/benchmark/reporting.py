@@ -40,7 +40,7 @@ def _json_options(*, compact: bool) -> _JsonOptions:
     if not isinstance(compact, bool):
         raise TypeError("compact must be a boolean")
     options: _JsonOptions = {
-        "ensure_ascii": not bool(1),
+        "ensure_ascii": False,
         "sort_keys": True,
     }
     if compact:

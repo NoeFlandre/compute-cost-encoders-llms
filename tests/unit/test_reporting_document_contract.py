@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 from typing import cast
 
 import pytest
 
+import compute_cost_encoders_llms.benchmark.reporting as reporting_module
 from compute_cost_encoders_llms.benchmark.reporting import (
     MeasurementError,
     ModelSummary,
@@ -22,6 +24,28 @@ from compute_cost_encoders_llms.benchmark.reporting import (
     render_latex_summary,
     write_json,
 )
+
+
+def test_json_options_declares_unicode_policy_as_literal() -> None:
+    source = Path(reporting_module.__file__).read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    assignment = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.AnnAssign)
+        and isinstance(node.target, ast.Name)
+        and node.target.id == "options"
+    )
+    assert isinstance(assignment.value, ast.Dict)
+    ensure_ascii = next(
+        value
+        for key, value in zip(
+            assignment.value.keys, assignment.value.values, strict=True
+        )
+        if isinstance(key, ast.Constant) and key.value == "ensure_ascii"
+    )
+    assert isinstance(ensure_ascii, ast.Constant)
+    assert ensure_ascii.value is False
 
 
 def test_render_latex_document_preserves_complete_public_report_contract() -> None:
