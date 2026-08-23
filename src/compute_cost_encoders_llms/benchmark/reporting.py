@@ -133,14 +133,17 @@ def _optional_latency_summary(
 def write_json(path: Path, document: Mapping[str, object]) -> None:
     """Write one deterministic JSON document."""
 
-    path.write_text(json.dumps(document, **_json_options(compact=False)) + "\n")
+    path.write_text(
+        json.dumps(document, **_json_options(compact=False)) + "\n",
+        encoding="utf-8",
+    )
 
 
 def write_jsonl(path: Path, records: Iterable[Mapping[str, object]]) -> None:
     """Write validated records as deterministic JSONL."""
 
     lines = [json_line(validate_measurement(record)) for record in records]
-    path.write_text("\n".join(lines) + "\n")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def _latex_escape(value: object) -> str:

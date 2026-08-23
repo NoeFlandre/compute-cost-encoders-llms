@@ -95,7 +95,7 @@ def validate_metadata(metadata: object) -> list[str]:
 def validate_file(path: Path) -> list[str]:
     """Return validation errors for a JSON metadata file."""
     try:
-        metadata = json.loads(path.read_text())
+        metadata = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
         return [f"could not read JSON metadata: {error}"]
     return validate_metadata(metadata)

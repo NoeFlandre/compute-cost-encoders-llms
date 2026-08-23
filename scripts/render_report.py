@@ -18,7 +18,7 @@ PROJECT_BUCKET_URI = "hf://buckets/NoeFlandre/compute-cost-encoders-llms"
 
 
 def _read_json(path: Path) -> Mapping[str, object]:
-    document = json.loads(path.read_text())
+    document = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(document, Mapping):
         raise ValueError(f"JSON document is not an object: {path}")
     return document
@@ -249,7 +249,7 @@ def render_report(
     )
     manifest = _mapping_value(merged, "manifest")
     summary = _mapping_value(merged, "summary")
-    output.write_text(render_latex_document(manifest, summary))
+    output.write_text(render_latex_document(manifest, summary), encoding="utf-8")
     if checkpoint is not None:
         metadata = build_checkpoint_metadata(
             merged,
@@ -258,7 +258,10 @@ def render_report(
             model_revision=os.environ["GRID5000_MODEL_REVISION"],
             artifact_prefix=os.environ["GRID5000_ARTIFACT_PREFIX"],
         )
-        checkpoint.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n")
+        checkpoint.write_text(
+            json.dumps(metadata, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
 
 
 def main() -> None:

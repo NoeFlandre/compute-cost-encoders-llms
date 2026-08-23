@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import locale
 from typing import cast
 
 import pytest
@@ -113,6 +114,18 @@ def test_json_line_is_sorted_and_serializable(tmp_path) -> None:
     jsonl_path = tmp_path / "records.jsonl"
     write_jsonl(jsonl_path, [record])
     assert jsonl_path.read_text() == json_line(record) + "\n"
+
+
+def test_write_json_preserves_unicode_under_ascii_locale(tmp_path) -> None:
+    previous_locale = locale.setlocale(locale.LC_CTYPE)
+    try:
+        locale.setlocale(locale.LC_CTYPE, "C")
+        document_path = tmp_path / "unicode.json"
+        write_json(document_path, {"é": "é"})
+    finally:
+        locale.setlocale(locale.LC_CTYPE, previous_locale)
+
+    assert document_path.read_text(encoding="utf-8") == '{\n  "é": "é"\n}\n'
 
 
 def test_render_latex_summary_escapes_report_values() -> None:
