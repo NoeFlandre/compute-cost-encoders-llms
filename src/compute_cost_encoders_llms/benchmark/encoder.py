@@ -54,7 +54,7 @@ def validate_single_token_candidates(
     """Return candidate token IDs, rejecting labels split into multiple tokens."""
 
     result: dict[str, int] = {}
-    for label in ("yes", "no"):
+    for label in candidate_labels():
         tokens = candidate_tokens.get(label)
         if tokens is None or len(tokens) != 1:
             raise ValueError(f"{label} must be represented by a single token")

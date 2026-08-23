@@ -306,6 +306,24 @@ def test_validate_single_token_candidates_rejects_split_labels() -> None:
         validate_single_token_candidates({"yes": [11, 13], "no": [12]})
 
 
+def test_validate_single_token_candidates_uses_shared_candidate_labels(
+    monkeypatch,
+) -> None:
+    calls: list[str] = []
+
+    def labels() -> tuple[str, str]:
+        calls.append("called")
+        return ("yes", "no")
+
+    monkeypatch.setattr(encoder_module, "candidate_labels", labels)
+
+    assert validate_single_token_candidates({"yes": [11], "no": [12]}) == {
+        "yes": 11,
+        "no": 12,
+    }
+    assert calls == ["called"]
+
+
 def test_mask_position_requires_exactly_one_mask() -> None:
     assert mask_position([3, 99, 4], 99) == 1
 

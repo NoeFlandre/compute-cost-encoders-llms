@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import TypeGuard
 
 from compute_cost_encoders_llms.benchmark._numerics import _is_finite_number
+from compute_cost_encoders_llms.benchmark.example import candidate_labels
 from compute_cost_encoders_llms.benchmark.reporting import render_latex_document
 
 PROJECT_BUCKET_URI = "hf://buckets/NoeFlandre/compute-cost-encoders-llms"
@@ -109,7 +110,7 @@ def _validate_latency_order(values: Mapping[str, float]) -> None:
 def _validate_mean_logprobs(model: Mapping[str, object]) -> None:
     scores = _mapping_value(model, "mean_logprobs")
     _require_binary_keys(scores, "mean_logprobs")
-    for label in ("yes", "no"):
+    for label in candidate_labels():
         if not _is_finite_number(scores[label]):
             raise ValueError("mean_logprobs must be finite")
 

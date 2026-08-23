@@ -467,6 +467,19 @@ def test_merge_artifacts_rejects_identity_and_model_contract_violations() -> Non
         )
 
 
+def test_validate_mean_logprobs_uses_shared_candidate_labels(monkeypatch) -> None:
+    calls: list[str] = []
+
+    def labels() -> tuple[str, str]:
+        calls.append("called")
+        return ("yes", "no")
+
+    monkeypatch.setattr(report_module, "candidate_labels", labels, raising=False)
+
+    report_module._validate_mean_logprobs({"mean_logprobs": {"yes": -1.0, "no": -2.0}})
+    assert calls == ["called"]
+
+
 def test_render_report_validation_contracts() -> None:
     with pytest.raises(
         ValueError,

@@ -151,6 +151,19 @@ def test_choose_decision_uses_stable_label_order_for_ties() -> None:
         choose_decision({"yes": float("nan"), "no": -1.0})
 
 
+def test_choose_decision_uses_shared_candidate_labels(monkeypatch) -> None:
+    calls: list[str] = []
+
+    def labels() -> tuple[str, str]:
+        calls.append("called")
+        return ("yes", "no")
+
+    monkeypatch.setattr(measurement_module, "candidate_labels", labels, raising=False)
+
+    assert measurement_module.choose_decision({"yes": -1.0, "no": -2.0}) == "yes"
+    assert calls == ["called"]
+
+
 def test_measure_repetitions_excludes_warmups(monkeypatch) -> None:
     calls: list[int] = []
 

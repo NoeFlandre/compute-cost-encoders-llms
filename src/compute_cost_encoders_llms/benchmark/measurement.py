@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import NotRequired, TypedDict, TypeGuard
 
 from ._numerics import _is_finite_number
+from .example import candidate_labels
 
 
 class MeasurementError(ValueError):
@@ -56,7 +57,7 @@ def measure_repetitions[ValueT](
 def choose_decision(logprobs: Mapping[str, float]) -> str:
     """Choose the highest binary score, preferring ``yes`` on a tie."""
 
-    labels = ("yes", "no")
+    labels = candidate_labels()
     if set(logprobs) != set(labels):
         raise MeasurementError("logprobs must contain yes and no")
     if any(not math.isfinite(float(logprobs[label])) for label in labels):
