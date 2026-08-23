@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import sys
+from collections.abc import Mapping
 from types import SimpleNamespace
 from typing import ClassVar
 from urllib.request import Request
@@ -471,6 +472,46 @@ def test_parse_llama_completion_reads_candidate_logprobs() -> None:
         "yes": -0.25,
         "no": -1.25,
     }
+
+
+def test_parse_candidate_logprobs_reuses_normalized_candidate_map(monkeypatch) -> None:
+    seen: list[object] = []
+
+    def capture(
+        entry: Mapping[str, object], candidate_by_key: object
+    ) -> tuple[str, float] | None:
+        assert isinstance(candidate_by_key, dict)
+        seen.append(candidate_by_key)
+        parsed = llm_module._candidate_token_score(entry)
+        if parsed is None:
+            return None
+        token, score = parsed
+        label = candidate_by_key.get(token.strip().casefold())
+        return (label, score) if isinstance(label, str) else None
+
+    monkeypatch.setattr(llm_module, "_candidate_logprob", capture)
+    payload = {
+        "completion_probabilities": [
+            {
+                "probs": [
+                    {
+                        "token": "yes",
+                        "logprob": -0.25,
+                        "top_logprobs": [
+                            {"token": "no", "logprob": -1.25},
+                        ],
+                    }
+                ]
+            }
+        ]
+    }
+
+    assert parse_candidate_logprobs(payload, ("yes", "no")) == {
+        "yes": -0.25,
+        "no": -1.25,
+    }
+    assert len(seen) == 2
+    assert seen[0] is seen[1]
 
 
 def test_parse_llama_aggregates_case_and_spacing_variants_without_overwriting() -> None:

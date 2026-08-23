@@ -261,9 +261,10 @@ def parse_candidate_logprobs(
 ) -> dict[str, float]:
     """Extract raw log probabilities for all requested candidate labels."""
 
+    candidate_by_key = {candidate.casefold(): candidate for candidate in candidates}
     scores: dict[str, list[float]] = {}
     for entry in _entries(payload):
-        parsed = _candidate_logprob(entry, candidates)
+        parsed = _candidate_logprob(entry, candidate_by_key)
         if parsed is not None:
             label, value = parsed
             scores.setdefault(label, []).append(value)
@@ -272,14 +273,13 @@ def parse_candidate_logprobs(
 
 
 def _candidate_logprob(
-    entry: Mapping[str, object], candidates: Sequence[str]
+    entry: Mapping[str, object], candidate_by_key: Mapping[str, str]
 ) -> tuple[str, float] | None:
     parsed = _candidate_token_score(entry)
     if parsed is None:
         return None
     token, score = parsed
     normalized = token.strip().casefold()
-    candidate_by_key = {candidate.casefold(): candidate for candidate in candidates}
     if normalized not in candidate_by_key:
         return None
     return candidate_by_key[normalized], score
