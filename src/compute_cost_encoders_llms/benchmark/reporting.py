@@ -5,6 +5,7 @@ from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import TypedDict
 
+from ._mappings import _mapping_field
 from .measurement import (
     LatencySummary,
     MeasurementError,
@@ -246,11 +247,6 @@ def render_latex_document(
     rows.extend(_reproducibility_section(manifest, models, protocol))
     rows.append(r"\end{document}")
     return "\n".join(rows) + "\n"
-
-
-def _mapping_field(document: Mapping[str, object], field: str) -> Mapping[str, object]:
-    value = document.get(field)
-    return value if isinstance(value, Mapping) else {}
 
 
 def _model_summaries(summary: Mapping[str, object]) -> list[ModelSummary]:

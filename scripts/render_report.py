@@ -11,6 +11,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import TypeGuard
 
+from compute_cost_encoders_llms.benchmark._mappings import _mapping_field
 from compute_cost_encoders_llms.benchmark._numerics import _is_finite_number
 from compute_cost_encoders_llms.benchmark.example import candidate_labels
 from compute_cost_encoders_llms.benchmark.reporting import render_latex_document
@@ -179,10 +180,12 @@ def build_checkpoint_metadata(
 
 
 def _mapping_value(document: Mapping[str, object], field: str) -> Mapping[str, object]:
-    value = document.get(field)
-    if not isinstance(value, Mapping):
-        raise ValueError(f"merged artifact field is not an object: {field}")
-    return value
+    return _mapping_field(
+        document,
+        field,
+        required=True,
+        error_context="merged artifact",
+    )
 
 
 def _text_value(document: Mapping[str, object], field: str) -> str:
