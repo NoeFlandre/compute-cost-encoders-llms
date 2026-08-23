@@ -261,9 +261,8 @@ def _model_summaries(summary: Mapping[str, object]) -> list[ModelSummary]:
 
 
 def _number_text(value: object) -> str:
-    if isinstance(value, (int, float)) and not isinstance(value, bool):
-        return f"{float(value):.3f}"
-    return "--"
+    numeric = _number_value(value)
+    return f"{numeric:.3f}" if numeric is not None else "--"
 
 
 def _count_text(value: object) -> str:

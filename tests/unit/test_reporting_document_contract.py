@@ -48,6 +48,12 @@ def test_json_options_declares_unicode_policy_as_literal() -> None:
     assert ensure_ascii.value is False
 
 
+def test_number_text_uses_shared_numeric_conversion(monkeypatch) -> None:
+    monkeypatch.setattr(reporting_module, "_number_value", lambda _value: 12.5)
+
+    assert reporting_module._number_text(object()) == "12.500"
+
+
 def test_render_latex_document_preserves_complete_public_report_contract() -> None:
     manifest: dict[str, object] = {
         "source_commit": "a" * 40,
