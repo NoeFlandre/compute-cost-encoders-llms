@@ -16,6 +16,7 @@ from .encoder import (
     ModelLike,
     TokenizerLike,
     TorchLike,
+    build_candidate_token_ids,
     score_transformers_once,
 )
 from .example import (
@@ -198,12 +199,14 @@ def _encoder_records(
     dependency_lock_sha256: str | None,
 ) -> tuple[list[MeasurementRecord], Mapping[str, object]]:
     loaded = _load_encoder(config, dependency_lock_sha256)
+    candidate_token_ids = build_candidate_token_ids(loaded.tokenizer)
     timed = measure_repetitions(
         lambda: score_transformers_once(
             loaded.tokenizer,
             loaded.model,
             loaded.torch_module,
             config.device,
+            candidate_token_ids=candidate_token_ids,
         ),
         warmups=config.warmups,
         repetitions=config.repetitions,

@@ -136,6 +136,8 @@ def capture_encoder_score(
     model: object,
     torch_module: object,
     device: str,
+    *,
+    candidate_token_ids: object = None,
 ) -> EncoderScore:
     calls.append((tokenizer, model, torch_module, device))
     return score
@@ -507,6 +509,11 @@ def test_encoder_records_preserve_config_inputs_and_runtime_metadata(
     )
     monkeypatch.setattr(
         cli_module,
+        "build_candidate_token_ids",
+        lambda _tokenizer: {"yes": (1, 3, 5), "no": (2, 4, 6)},
+    )
+    monkeypatch.setattr(
+        cli_module,
         "score_transformers_once",
         partial(
             capture_encoder_score,
@@ -530,6 +537,77 @@ def test_encoder_records_preserve_config_inputs_and_runtime_metadata(
     assert score_calls == [(tokenizer, model, torch_module, "cuda")]
     assert records == [{**score_record("encoder", 0, score)}]
     assert runtime == {"dtype": "float32", "dependency_lock_sha256": "lock-sha"}
+
+
+def test_encoder_records_pass_precomputed_candidate_ids_to_repetitions(
+    monkeypatch,
+) -> None:
+    config = BenchmarkConfig(
+        encoder_revision="c5955035435e2bf121cde7f3c8863ef52ff35d82",
+        llm_revision="8a7ee08e8b9bfb857107ecc25a5599d2f38b76f8",
+        llama_cpp_revision="6503355df0eb4f65875012523263c302fe0088c1",
+        repetitions=1,
+        warmups=0,
+    )
+    tokenizer = cast(TokenizerLike, object())
+    loaded = LoadedEncoder(
+        tokenizer=tokenizer,
+        model=cast(ModelLike, object()),
+        torch_module=cast(TorchLike, object()),
+        runtime={},
+    )
+    candidate_token_ids: dict[str, tuple[int, ...]] = {
+        "yes": (1, 3, 5),
+        "no": (2, 4, 6),
+    }
+    score = EncoderScore(
+        logprobs={"yes": -0.1, "no": -2.2},
+        tokenization_ms=1.0,
+        model_ms=2.0,
+        logprob_ms=0.1,
+        text_to_logprob_ms=3.1,
+        input_tokens=12,
+    )
+    prepare_calls: list[object] = []
+    seen: list[object] = []
+
+    def capture_score(
+        _tokenizer: object,
+        _model: object,
+        _torch_module: object,
+        _device: str,
+        *,
+        candidate_token_ids: object = None,
+    ) -> EncoderScore:
+        seen.append(candidate_token_ids)
+        return score
+
+    def prepare_candidate_ids(_tokenizer: object) -> dict[str, tuple[int, ...]]:
+        prepare_calls.append(_tokenizer)
+        return candidate_token_ids
+
+    monkeypatch.setattr(cli_module, "_load_encoder", lambda *_args: loaded)
+    monkeypatch.setattr(
+        cli_module,
+        "build_candidate_token_ids",
+        prepare_candidate_ids,
+        raising=False,
+    )
+    monkeypatch.setattr(cli_module, "score_transformers_once", capture_score)
+    monkeypatch.setattr(
+        cli_module,
+        "measure_repetitions",
+        partial(
+            measure_encoder_once,
+            expected_warmups=config.warmups,
+            expected_repetitions=config.repetitions,
+        ),
+    )
+
+    _encoder_records(config, None)
+
+    assert prepare_calls == [tokenizer]
+    assert seen == [candidate_token_ids]
 
 
 def test_llm_records_preserve_seed_and_runtime_metadata(monkeypatch) -> None:

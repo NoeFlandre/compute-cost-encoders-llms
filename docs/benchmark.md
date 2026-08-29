@@ -6,7 +6,9 @@ out-of-the-box llama.cpp next-token request for this made-up binary example:
 > A public park with grass, trees, and walking paths occupies the parcel.
 
 Both backends score the labels `yes` and `no`. The encoder fills one mask and
-does not decode. The LLM requests exactly one prediction with prompt caching
+does not decode. Fixed candidate label forms are tokenized once during encoder
+setup and reused across repetitions; prompt tokenization remains per
+repetition. The LLM requests exactly one prediction with prompt caching
 disabled; its prompt evaluation and one-token prediction are included in the
 text-to-logprob measurement. No model is fine-tuned and no dataset is used.
 

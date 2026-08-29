@@ -74,6 +74,21 @@ def validate_single_token_variants(
     return result
 
 
+def build_candidate_token_ids(
+    tokenizer: TokenizerLike,
+) -> dict[str, tuple[int, ...]]:
+    """Tokenize and validate all case variants of the fixed candidate labels."""
+
+    candidate_tokens = {
+        label: tuple(
+            _integer_list(tokenizer(form, add_special_tokens=False)["input_ids"])
+            for form in candidate_label_forms(label)
+        )
+        for label in candidate_labels()
+    }
+    return validate_single_token_variants(candidate_tokens)
+
+
 def _validated_variant_ids(
     label: str, forms: Sequence[Sequence[int]] | None
 ) -> tuple[int, ...]:
@@ -204,6 +219,8 @@ def score_transformers_once(
     model: ModelLike,
     torch_module: TorchLike,
     device: str,
+    *,
+    candidate_token_ids: Mapping[str, Sequence[int]] | None = None,
 ) -> EncoderScore:
     """Score yes/no at one masked position using a Transformers model."""
 
@@ -214,18 +231,12 @@ def score_transformers_once(
         return_tensors="pt",
         add_special_tokens=True,
     )
-    candidate_tokens = {
-        label: tuple(
-            _integer_list(tokenizer(form, add_special_tokens=False)["input_ids"])
-            for form in candidate_label_forms(label)
-        )
-        for label in candidate_labels()
-    }
+    if candidate_token_ids is None:
+        candidate_token_ids = build_candidate_token_ids(tokenizer)
     tokenization_ms = (time.perf_counter_ns() - token_start) / 1_000_000
     input_ids = _tensor_like(encoded["input_ids"])
     input_id_list = _integer_list(input_ids[0].tolist())
     position = mask_position(input_id_list, tokenizer.mask_token_id)
-    candidate_ids = validate_single_token_variants(candidate_tokens)
     model_inputs = {
         name: _tensor_like(value).to(device) for name, value in encoded.items()
     }
@@ -240,7 +251,7 @@ def score_transformers_once(
     logprob_start = time.perf_counter_ns()
     logits = _tensor_like(outputs.logits)[0][position]
     logits = _float_list(logits.detach().float().cpu().tolist())
-    logprobs = candidate_variant_logprobs(logits, candidate_ids)
+    logprobs = candidate_variant_logprobs(logits, candidate_token_ids)
     logprob_ms = (time.perf_counter_ns() - logprob_start) / 1_000_000
     text_to_logprob_ms = (time.perf_counter_ns() - total_start) / 1_000_000
     return EncoderScore(

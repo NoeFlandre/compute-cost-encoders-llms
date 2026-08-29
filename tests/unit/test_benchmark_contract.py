@@ -481,6 +481,26 @@ def test_score_transformers_once_returns_masked_scores_and_timings(monkeypatch) 
     )
 
 
+def test_score_transformers_once_reuses_precomputed_candidate_ids() -> None:
+    tokenizer = FakeTokenizer()
+
+    score = score_transformers_once(
+        tokenizer,
+        FakeModel(),
+        FakeTorch(),
+        "cpu",
+        candidate_token_ids={"yes": (1, 3, 5), "no": (2, 4, 6)},
+    )
+
+    assert score.logprobs["yes"] > score.logprobs["no"]
+    assert tokenizer.calls == [
+        (
+            encoder_prompt(tokenizer.mask_token),
+            {"return_tensors": "pt", "add_special_tokens": True},
+        )
+    ]
+
+
 def test_parse_llama_completion_reads_candidate_logprobs() -> None:
     payload = {
         "completion_probabilities": [
