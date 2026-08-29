@@ -134,9 +134,17 @@ def candidate_variant_logprobs(
     """Aggregate log-softmax scores for exact token-ID label variants."""
 
     values = _validated_logits(logits)
-    normalizer = _log_normalizer(values)
+    return _candidate_variant_logprobs(values, candidate_token_ids)
+
+
+def _candidate_variant_logprobs(
+    logits: Sequence[float], candidate_token_ids: Mapping[str, Sequence[int]]
+) -> dict[str, float]:
+    """Aggregate candidate scores from an already validated logits sequence."""
+
+    normalizer = _log_normalizer(logits)
     return {
-        label: _variant_logprob(values, token_ids, normalizer)
+        label: _variant_logprob(logits, token_ids, normalizer)
         for label, token_ids in candidate_token_ids.items()
     }
 
@@ -202,6 +210,16 @@ def _float_list(value: object) -> list[float]:
     return result
 
 
+def _validated_model_logits(value: object) -> list[float]:
+    """Validate model logits with one conversion for native float lists."""
+
+    if not isinstance(value, list):
+        raise ValueError("encoder logits are invalid")
+    if all(type(item) is float for item in value):
+        return _validated_logits(value)
+    return _validated_logits(_float_list(value))
+
+
 @dataclass(frozen=True, slots=True)
 class EncoderScore:
     """One masked-language-model score and its timing components."""
@@ -250,8 +268,8 @@ def score_transformers_once(
 
     logprob_start = time.perf_counter_ns()
     logits = _tensor_like(outputs.logits)[0][position]
-    logits = _float_list(logits.detach().float().cpu().tolist())
-    logprobs = candidate_variant_logprobs(logits, candidate_token_ids)
+    logits = _validated_model_logits(logits.detach().float().cpu().tolist())
+    logprobs = _candidate_variant_logprobs(logits, candidate_token_ids)
     logprob_ms = (time.perf_counter_ns() - logprob_start) / 1_000_000
     text_to_logprob_ms = (time.perf_counter_ns() - total_start) / 1_000_000
     return EncoderScore(

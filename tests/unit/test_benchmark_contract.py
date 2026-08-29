@@ -428,6 +428,41 @@ def test_encoder_runtime_type_adapters_preserve_typed_inputs() -> None:
         _tensor_like(None)
 
 
+def test_model_logits_use_one_validation_for_native_float_lists(monkeypatch) -> None:
+    validated_model_logits = getattr(encoder_module, "_validated_model_logits", None)
+    assert callable(validated_model_logits)
+
+    assert validated_model_logits([1, 2.5]) == [1.0, 2.5]
+    with pytest.raises(ValueError, match=r"^logits must be finite$"):
+        validated_model_logits([1.0, math.nan])
+    with pytest.raises(ValueError, match=r"^encoder logits are invalid$"):
+        validated_model_logits([True])
+
+    def fail_conversion(_value: object) -> list[float]:
+        raise AssertionError("native float logits took the conversion fallback")
+
+    monkeypatch.setattr(encoder_module, "_float_list", fail_conversion)
+
+    assert validated_model_logits([1.0, 2.5]) == [1.0, 2.5]
+
+
+def test_score_transformers_once_uses_validated_candidate_scoring(monkeypatch) -> None:
+    def fail_revalidation(*_args: object, **_kwargs: object) -> dict[str, float]:
+        raise AssertionError("model logits were sent through the revalidating wrapper")
+
+    monkeypatch.setattr(encoder_module, "candidate_variant_logprobs", fail_revalidation)
+
+    score = score_transformers_once(
+        FakeTokenizer(),
+        FakeModel(),
+        FakeTorch(),
+        "cpu",
+        candidate_token_ids={"yes": (1, 3, 5), "no": (2, 4, 6)},
+    )
+
+    assert score.logprobs["yes"] > score.logprobs["no"]
+
+
 def test_variant_logprob_rejects_empty_token_ids_with_exact_error() -> None:
     with pytest.raises(ValueError, match=r"^candidate token IDs must not be empty$"):
         _variant_logprob([0.0], (), 0.0)
