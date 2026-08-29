@@ -95,6 +95,20 @@ def test_validate_measurement_requires_text_to_logprob_timing() -> None:
         validate_measurement({})
 
 
+def test_logprob_validation_helpers_preserve_binary_finite_contract() -> None:
+    has_binary_keys = getattr(measurement_module, "_has_binary_logprob_keys", None)
+    has_finite = getattr(measurement_module, "_has_finite_binary_logprobs", None)
+    assert callable(has_binary_keys)
+    assert callable(has_finite)
+
+    assert has_binary_keys({"yes": -0.1, "no": -2.2}) is True
+    assert has_binary_keys({"yes": -0.1}) is False
+    assert has_binary_keys(["yes", "no"]) is False
+    assert has_finite({"yes": -0.1, "no": -2.2}) is True
+    assert has_finite({"yes": float("nan"), "no": -2.2}) is False
+    assert has_finite({"yes": "not a number", "no": -2.2}) is False
+
+
 def test_json_line_is_sorted_and_serializable(tmp_path) -> None:
     assert json_line({"z": 1, "a": 2}) == '{"a":2,"z":1}'
     assert json_line({"é": "é"}) == '{"é":"é"}'

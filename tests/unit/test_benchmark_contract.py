@@ -357,6 +357,29 @@ def test_shared_logsumexp_is_stable_for_large_values() -> None:
     )
 
 
+def test_logsumexp_resolves_exponential_function_once(monkeypatch) -> None:
+    class CountingMath:
+        def __init__(self) -> None:
+            self.exp_accesses = 0
+
+        @property
+        def exp(self):
+            self.exp_accesses += 1
+            return math.exp
+
+        @staticmethod
+        def log(value: float) -> float:
+            return math.log(value)
+
+    counting_math = CountingMath()
+    monkeypatch.setattr(numerics_module, "math", counting_math)
+
+    assert numerics_module.logsumexp([0.0, 1.0]) == pytest.approx(
+        math.log(math.exp(0.0) + math.exp(1.0))
+    )
+    assert counting_math.exp_accesses == 1
+
+
 def test_shared_finite_number_predicate_rejects_bool_and_nonfinite_values() -> None:
     predicate = getattr(numerics_module, "_is_finite_number", None)
 
@@ -444,6 +467,28 @@ def test_model_logits_use_one_validation_for_native_float_lists(monkeypatch) -> 
     monkeypatch.setattr(encoder_module, "_float_list", fail_conversion)
 
     assert validated_model_logits([1.0, 2.5]) == [1.0, 2.5]
+
+
+def test_model_logits_reuse_native_float_list_without_copy() -> None:
+    validated_model_logits = getattr(encoder_module, "_validated_model_logits", None)
+    assert callable(validated_model_logits)
+    logits = [1.0, 2.5]
+
+    assert validated_model_logits(logits) is logits
+    with pytest.raises(ValueError, match=r"^logits must not be empty$"):
+        validated_model_logits([])
+    with pytest.raises(ValueError, match=r"^encoder logits are invalid$"):
+        validated_model_logits("not a list")
+
+
+def test_native_float_list_detection_is_strict() -> None:
+    is_native_float_list = getattr(encoder_module, "_is_native_float_list", None)
+    assert callable(is_native_float_list)
+
+    assert is_native_float_list([1.0, 2.5]) is True
+    assert is_native_float_list([]) is False
+    assert is_native_float_list([1, 2.5]) is False
+    assert is_native_float_list("not a list") is False
 
 
 def test_score_transformers_once_uses_validated_candidate_scoring(monkeypatch) -> None:

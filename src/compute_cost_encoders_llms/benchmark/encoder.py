@@ -215,9 +215,17 @@ def _validated_model_logits(value: object) -> list[float]:
 
     if not isinstance(value, list):
         raise ValueError("encoder logits are invalid")
-    if all(type(item) is float for item in value):
-        return _validated_logits(value)
+    if _is_native_float_list(value):
+        return value
     return _validated_logits(_float_list(value))
+
+
+def _is_native_float_list(value: object) -> TypeGuard[list[float]]:
+    return (
+        type(value) is list
+        and bool(value)
+        and all(type(item) is float and math.isfinite(item) for item in value)
+    )
 
 
 @dataclass(frozen=True, slots=True)

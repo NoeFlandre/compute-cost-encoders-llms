@@ -142,11 +142,23 @@ def _required_float(value: object) -> float:
 
 def _validate_logprobs(record: Mapping[str, object]) -> dict[str, float]:
     logprobs = record["logprobs"]
-    if not isinstance(logprobs, Mapping) or set(logprobs) != {"yes", "no"}:
+    if not _has_binary_logprob_keys(logprobs):
         raise MeasurementError("logprobs must contain yes and no")
-    if any(not _is_finite_number(logprobs[label]) for label in ("yes", "no")):
+    if not _has_finite_binary_logprobs(logprobs):
         raise MeasurementError("logprobs must be finite")
     return {label: float(logprobs[label]) for label in ("yes", "no")}
+
+
+def _has_binary_logprob_keys(
+    value: object,
+) -> TypeGuard[Mapping[str, object]]:
+    return isinstance(value, Mapping) and set(value) == {"yes", "no"}
+
+
+def _has_finite_binary_logprobs(
+    logprobs: Mapping[str, object],
+) -> TypeGuard[Mapping[str, int | float]]:
+    return all(_is_finite_number(logprobs[label]) for label in ("yes", "no"))
 
 
 def _validate_optional_fields(
