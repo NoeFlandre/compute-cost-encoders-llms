@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import locale
+from collections.abc import Callable
 from typing import cast
 
 import pytest
@@ -193,6 +194,26 @@ def test_measure_repetitions_excludes_warmups(monkeypatch) -> None:
     monkeypatch.setattr(measurement_module.time, "perf_counter_ns", lambda: next(ticks))
     timed = measure_repetitions(lambda: "value", warmups=0, repetitions=1)
     assert timed[0].elapsed_ms == 1.0
+
+
+def test_measure_repetitions_resolves_the_clock_once(monkeypatch) -> None:
+    class CountingTime:
+        def __init__(self) -> None:
+            self.accesses = 0
+            self.ticks = iter((100, 1_000_100))
+
+        @property
+        def perf_counter_ns(self) -> Callable[[], int]:
+            self.accesses += 1
+            return lambda: next(self.ticks)
+
+    clock = CountingTime()
+    monkeypatch.setattr(measurement_module, "time", clock)
+
+    timed = measure_repetitions(lambda: "value", warmups=0, repetitions=1)
+
+    assert timed[0].elapsed_ms == 1.0
+    assert clock.accesses == 1
 
 
 def test_build_summary_groups_models_and_counts_decisions() -> None:

@@ -43,13 +43,14 @@ def measure_repetitions[ValueT](
 
     if warmups < 0 or repetitions < 1:
         raise MeasurementError("warmups must be non-negative and repetitions positive")
+    clock = time.perf_counter_ns
     for _ in range(warmups):
         operation()
     results: list[TimedValue[ValueT]] = []
     for _ in range(repetitions):
-        start = time.perf_counter_ns()
+        start = clock()
         value = operation()
-        elapsed_ms = (time.perf_counter_ns() - start) / 1_000_000
+        elapsed_ms = (clock() - start) / 1_000_000
         results.append(TimedValue(value=value, elapsed_ms=elapsed_ms))
     return results
 
