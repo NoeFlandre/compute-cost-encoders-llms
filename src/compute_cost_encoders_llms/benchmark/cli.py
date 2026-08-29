@@ -27,7 +27,12 @@ from .example import (
 )
 from .llm import LlamaClient, LlamaScore
 from .measurement import MeasurementRecord, choose_decision, measure_repetitions
-from .reporting import build_summary, write_json, write_jsonl
+from .reporting import (
+    _summary_from_validated_records,
+    _validated_records,
+    _write_validated_jsonl,
+    write_json,
+)
 from .runtime import (
     build_runtime_metadata,
     quantization_from_filename,
@@ -267,8 +272,9 @@ def run(config_path: Path, output_dir: Path, backend: str, run_id: str) -> None:
     manifest["config_sha256"] = _config_digest(config_path)
     manifest["backend"] = backend
     write_json(output_dir / "manifest.json", manifest)
-    write_jsonl(output_dir / "measurements.jsonl", records)
-    write_json(output_dir / "summary.json", build_summary(records))
+    records = _validated_records(records)
+    _write_validated_jsonl(output_dir / "measurements.jsonl", records)
+    write_json(output_dir / "summary.json", _summary_from_validated_records(records))
 
 
 def _dependency_lock_digest(config_path: Path) -> str | None:

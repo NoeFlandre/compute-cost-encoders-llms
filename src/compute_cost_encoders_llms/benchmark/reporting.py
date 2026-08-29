@@ -62,7 +62,20 @@ def json_line(record: Mapping[str, object]) -> str:
 def build_summary(records: Iterable[Mapping[str, object]]) -> SummaryDocument:
     """Group validated measurements into deterministic model summaries."""
 
-    grouped = _group_records(records)
+    return _summary_from_grouped(_group_records(records))
+
+
+def _summary_from_validated_records(
+    records: Iterable[MeasurementRecord],
+) -> SummaryDocument:
+    """Build a summary without revalidating records checked by the caller."""
+
+    return _summary_from_grouped(_group_validated_records(records))
+
+
+def _summary_from_grouped(
+    grouped: Mapping[str, list[MeasurementRecord]],
+) -> SummaryDocument:
     return {
         "models": [_model_summary(model, grouped[model]) for model in sorted(grouped)]
     }
@@ -71,16 +84,29 @@ def build_summary(records: Iterable[Mapping[str, object]]) -> SummaryDocument:
 def _group_records(
     records: Iterable[Mapping[str, object]],
 ) -> dict[str, list[MeasurementRecord]]:
+    return _group_validated_records(validate_measurement(record) for record in records)
+
+
+def _validated_records(
+    records: Iterable[Mapping[str, object]],
+) -> list[MeasurementRecord]:
+    """Validate a run's records once so downstream artifact writers can reuse them."""
+
+    return [validate_measurement(record) for record in records]
+
+
+def _group_validated_records(
+    records: Iterable[MeasurementRecord],
+) -> dict[str, list[MeasurementRecord]]:
     grouped: dict[str, list[MeasurementRecord]] = {}
     identities: set[tuple[str, int]] = set()
     for record in records:
-        validated = validate_measurement(record)
-        model = str(validated["model"])
-        identity = (model, validated["repetition"])
+        model = str(record["model"])
+        identity = (model, record["repetition"])
         if identity in identities:
             raise MeasurementError("duplicate measurement repetition")
         identities.add(identity)
-        grouped.setdefault(model, []).append(validated)
+        grouped.setdefault(model, []).append(record)
     if not grouped:
         raise MeasurementError("no measurements")
     return grouped
@@ -143,7 +169,13 @@ def write_json(path: Path, document: Mapping[str, object]) -> None:
 def write_jsonl(path: Path, records: Iterable[Mapping[str, object]]) -> None:
     """Write validated records as deterministic JSONL."""
 
-    lines = [json_line(validate_measurement(record)) for record in records]
+    _write_validated_jsonl(path, (validate_measurement(record) for record in records))
+
+
+def _write_validated_jsonl(path: Path, records: Iterable[MeasurementRecord]) -> None:
+    """Write records after validation has already been completed."""
+
+    lines = [json_line(record) for record in records]
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 

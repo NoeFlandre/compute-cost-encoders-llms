@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import locale
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import cast
 
 import pytest
 from scripts.render_report import merge_artifacts
 
 import compute_cost_encoders_llms.benchmark.measurement as measurement_module
+import compute_cost_encoders_llms.benchmark.reporting as reporting_module
 from compute_cost_encoders_llms.benchmark.encoder import _variant_logprob
 from compute_cost_encoders_llms.benchmark.measurement import (
     MeasurementError,
@@ -67,7 +68,6 @@ def test_validate_measurement_requires_text_to_logprob_timing() -> None:
         "text_to_logprob_ms": 3.1,
         "logprobs": {"yes": -0.1, "no": -2.2},
     }
-
     assert validate_measurement(record) == record
     assert validate_measurement({**record, "model_ms": 0.0})["model_ms"] == 0.0
 
@@ -129,6 +129,54 @@ def test_json_line_is_sorted_and_serializable(tmp_path) -> None:
     jsonl_path = tmp_path / "records.jsonl"
     write_jsonl(jsonl_path, [record])
     assert jsonl_path.read_text() == json_line(record) + "\n"
+
+
+def test_validated_reporting_helpers_reuse_one_validation_pass(
+    monkeypatch, tmp_path
+) -> None:
+    record = {
+        "model": "encoder",
+        "repetition": 0,
+        "tokenization_ms": 1.0,
+        "model_ms": 2.0,
+        "logprob_ms": 0.1,
+        "text_to_logprob_ms": 3.1,
+        "logprobs": {"yes": -0.1, "no": -2.2},
+    }
+    second_record = {**record, "repetition": 1}
+    calls: list[object] = []
+    original_validate = reporting_module.validate_measurement
+
+    def capture_validate(value: Mapping[str, object]) -> object:
+        calls.append(value)
+        return original_validate(value)
+
+    monkeypatch.setattr(reporting_module, "validate_measurement", capture_validate)
+    validate_records = getattr(reporting_module, "_validated_records", None)
+    build_validated_summary = getattr(
+        reporting_module, "_summary_from_validated_records", None
+    )
+    write_validated_jsonl = getattr(reporting_module, "_write_validated_jsonl", None)
+    assert callable(validate_records)
+    assert callable(build_validated_summary)
+    assert callable(write_validated_jsonl)
+
+    validated = validate_records([record, second_record])
+    summary = build_validated_summary(validated)
+    output = tmp_path / "measurements.jsonl"
+    write_validated_jsonl(output, validated)
+
+    assert len(calls) == 2
+    assert summary["models"][0]["model"] == "encoder"
+    assert summary["models"][0]["latency"]["count"] == 2
+    assert (
+        output.read_text()
+        == "\n".join((json_line(record), json_line(second_record))) + "\n"
+    )
+    with pytest.raises(MeasurementError, match=r"^duplicate measurement repetition$"):
+        build_validated_summary([validated[0], validated[0]])
+    with pytest.raises(MeasurementError, match=r"^no measurements$"):
+        build_validated_summary([])
 
 
 def test_write_json_preserves_unicode_under_ascii_locale(tmp_path) -> None:

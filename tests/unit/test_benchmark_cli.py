@@ -689,7 +689,17 @@ def test_run_writes_canonical_artifacts_and_manifest_contract(
     config_path = tmp_path / "config.toml"
     config_path.write_text("placeholder")
     output_dir = tmp_path / "nested" / backend / "run"
-    records: list[dict[str, object]] = [{"model": backend, "repetition": 0}]
+    records: list[dict[str, object]] = [
+        {
+            "model": backend,
+            "repetition": 0,
+            "tokenization_ms": 1.0,
+            "model_ms": 2.0,
+            "logprob_ms": 0.1,
+            "text_to_logprob_ms": 3.1,
+            "logprobs": {"yes": -0.1, "no": -2.2},
+        }
+    ]
     calls: dict[str, object] = {}
     json_calls: list[tuple[Path, object]] = []
     jsonl_calls: list[tuple[Path, object]] = []
@@ -713,9 +723,17 @@ def test_run_writes_canonical_artifacts_and_manifest_contract(
     monkeypatch.setattr(cli_module, "_hardware", lambda: {"gpu": "test"})
     monkeypatch.setattr(cli_module, "build_manifest", partial(capture_manifest, calls))
     monkeypatch.setattr(cli_module, "_config_digest", lambda path: "config-sha")
-    monkeypatch.setattr(cli_module, "build_summary", lambda value: {"records": value})
+    monkeypatch.setattr(
+        cli_module,
+        "_summary_from_validated_records",
+        lambda value: {"records": value},
+    )
     monkeypatch.setattr(cli_module, "write_json", partial(capture_json, json_calls))
-    monkeypatch.setattr(cli_module, "write_jsonl", partial(capture_jsonl, jsonl_calls))
+    monkeypatch.setattr(
+        cli_module,
+        "_write_validated_jsonl",
+        partial(capture_jsonl, jsonl_calls),
+    )
 
     run(config_path, output_dir, backend, "run-001")
 
