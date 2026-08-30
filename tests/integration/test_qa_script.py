@@ -80,8 +80,15 @@ def test_qa_rejects_mutation_results_with_no_tests(tmp_path: Path) -> None:
     assert "Mutation testing found" in result.stderr
 
 
-def test_qa_runs_all_stages_when_mutation_results_are_clean(tmp_path: Path) -> None:
-    result, log_dir = _run_qa(tmp_path, "")
+def test_qa_rejects_an_empty_mutation_inventory(tmp_path: Path) -> None:
+    result, _ = _run_qa(tmp_path, "")
+
+    assert result.returncode != 0
+    assert "Mutation testing produced no mutants" in result.stderr
+
+
+def test_qa_runs_all_stages_with_an_all_killed_inventory(tmp_path: Path) -> None:
+    result, log_dir = _run_qa(tmp_path, "src/example.py:10: killed\n")
 
     assert result.returncode == 0, result.stderr
     assert _read_uv_invocations(log_dir) == [
@@ -134,5 +141,5 @@ def test_qa_runs_all_stages_when_mutation_results_are_clean(tmp_path: Path) -> N
             "1",
         ],
         ["run", "mutmut", "run"],
-        ["run", "mutmut", "results"],
+        ["run", "mutmut", "results", "--all", "true"],
     ]

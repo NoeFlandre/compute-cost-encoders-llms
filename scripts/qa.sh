@@ -24,9 +24,13 @@ uv run crap4py src scripts --lcov coverage.lcov --max-crap 5.99 --max-workers 1
 # QA_STAGE: mutation tests
 if find src scripts -type f -name "*.py" ! -name "__init__.py" -print -quit | grep -q .; then
     uv run mutmut run
-    mutation_results="$(uv run mutmut results)"
-    printf '%s\n' "$mutation_results"
-    if [[ -n "$mutation_results" ]]; then
+    mutation_results="$(uv run mutmut results --all true)"
+    if [[ -z "$mutation_results" ]]; then
+        printf '%s\n' "Mutation testing produced no mutants." >&2
+        exit 1
+    fi
+    if grep -Evq ': killed$' <<<"$mutation_results"; then
+        printf '%s\n' "$mutation_results"
         printf '%s\n' "Mutation testing found non-killed mutants." >&2
         exit 1
     fi
