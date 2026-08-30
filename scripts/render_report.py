@@ -109,30 +109,43 @@ def _validate_latency_order(values: Mapping[str, float]) -> None:
 
 def _validate_mean_logprobs(model: Mapping[str, object]) -> None:
     scores = _mapping_value(model, "mean_logprobs")
-    _require_binary_keys(scores, "mean_logprobs")
-    for label in candidate_labels():
+    labels = candidate_labels()
+    _require_binary_keys(scores, "mean_logprobs", labels=labels)
+    for label in labels:
         if not _is_finite_number(scores[label]):
             raise ValueError("mean_logprobs must be finite")
 
 
 def _validate_decision_counts(model: Mapping[str, object]) -> None:
     counts = _mapping_value(model, "decision_counts")
-    values = _validated_decision_counts(counts)
+    labels = candidate_labels()
+    values = _validated_decision_counts(counts, labels=labels)
     latency = _mapping_value(model, "latency")
     if sum(values) != latency["count"]:
         raise ValueError("decision_counts must sum to latency count")
 
 
-def _require_binary_keys(values: Mapping[str, object], field: str) -> None:
-    if set(values) != {"yes", "no"}:
+def _require_binary_keys(
+    values: Mapping[str, object],
+    field: str,
+    *,
+    labels: tuple[str, str] | None = None,
+) -> None:
+    expected = candidate_labels() if labels is None else labels
+    if set(values) != set(expected):
         raise ValueError(f"{field} must contain yes and no")
 
 
-def _validated_decision_counts(counts: Mapping[str, object]) -> tuple[int, int]:
-    _require_binary_keys(counts, "decision_counts")
+def _validated_decision_counts(
+    counts: Mapping[str, object],
+    *,
+    labels: tuple[str, str] | None = None,
+) -> tuple[int, int]:
+    expected = candidate_labels() if labels is None else labels
+    _require_binary_keys(counts, "decision_counts", labels=expected)
     return (
-        _non_negative_count(counts["yes"]),
-        _non_negative_count(counts["no"]),
+        _non_negative_count(counts[expected[0]]),
+        _non_negative_count(counts[expected[1]]),
     )
 
 

@@ -539,6 +539,60 @@ def test_validate_mean_logprobs_uses_shared_candidate_labels(monkeypatch) -> Non
     assert calls == ["called"]
 
 
+def test_summary_validation_uses_shared_candidate_labels(monkeypatch) -> None:
+    labels = ("positive", "negative")
+    monkeypatch.setattr(report_module, "candidate_labels", lambda: labels)
+    model = {
+        "model": "encoder",
+        "latency": {
+            "count": 1,
+            "minimum": 1.0,
+            "median": 1.0,
+            "p05": 1.0,
+            "p95": 1.0,
+            "maximum": 1.0,
+            "mean": 1.0,
+            "stdev": 0.0,
+        },
+        "mean_logprobs": {"positive": -0.1, "negative": -2.2},
+        "decision_counts": {"positive": 1, "negative": 0},
+    }
+
+    assert report_module._validated_summary_models([model], "encoder") == [model]
+
+
+def test_validate_decision_counts_forwards_one_label_snapshot(monkeypatch) -> None:
+    labels = ("positive", "negative")
+    captured: list[tuple[str, str] | None] = []
+
+    def capture_labels(
+        counts: Mapping[str, object], *, labels: tuple[str, str] | None = None
+    ) -> tuple[int, int]:
+        captured.append(labels)
+        return (1, 0)
+
+    monkeypatch.setattr(report_module, "candidate_labels", lambda: labels)
+    monkeypatch.setattr(report_module, "_validated_decision_counts", capture_labels)
+
+    report_module._validate_decision_counts(
+        {
+            "decision_counts": {"positive": 1, "negative": 0},
+            "latency": {"count": 1},
+        }
+    )
+
+    assert captured == [labels]
+
+
+def test_validated_decision_counts_honors_explicit_labels(monkeypatch) -> None:
+    labels = ("positive", "negative")
+    monkeypatch.setattr(report_module, "candidate_labels", lambda: ("yes", "no"))
+
+    assert report_module._validated_decision_counts(
+        {"positive": 1, "negative": 0}, labels=labels
+    ) == (1, 0)
+
+
 def test_render_report_validation_contracts() -> None:
     with pytest.raises(
         ValueError,
