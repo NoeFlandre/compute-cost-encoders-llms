@@ -9,7 +9,7 @@ import sys
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
-from compute_cost_encoders_llms.benchmark._mappings import _mapping_field
+from scripts._artifact_fields import _as_mapping, _mapping_value, _text_value
 
 PROJECT_BUCKET_PREFIX = "hf://buckets/NoeFlandre/compute-cost-encoders-llms/"
 PROJECT_BUCKET_URI = PROJECT_BUCKET_PREFIX.rstrip("/")
@@ -54,22 +54,6 @@ def build_checkpoint_metadata(
     }
 
 
-def _mapping_value(document: Mapping[str, object], field: str) -> Mapping[str, object]:
-    return _mapping_field(
-        document,
-        field,
-        required=True,
-        error_context="merged artifact",
-    )
-
-
-def _text_value(document: Mapping[str, object], field: str) -> str:
-    value = document.get(field)
-    if not isinstance(value, str) or not value:
-        raise ValueError(f"merged artifact field is not text: {field}")
-    return value
-
-
 def _integer_value(document: Mapping[str, object], field: str) -> int:
     value = document.get(field)
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
@@ -94,12 +78,6 @@ def _checkpoint_metrics(summary: Mapping[str, object]) -> dict[str, object]:
             "decision_counts": dict(decisions),
         }
     return metrics
-
-
-def _as_mapping(value: object, field: str) -> Mapping[str, object]:
-    if not isinstance(value, Mapping):
-        raise ValueError(f"merged artifact field is not an object: {field}")
-    return value
 
 
 def _required_text_errors(metadata: Mapping[str, object]) -> list[str]:

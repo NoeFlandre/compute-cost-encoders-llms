@@ -216,8 +216,8 @@ UV_CACHE_DIR=/private/tmp/compute-cost-encoders-llms-uv-cache ./scripts/qa.sh
 Require Ruff, formatting, ty, unit, integration, acceptance, import-linter,
 CRAP, and mutation stages to pass. The baseline is 168 unit tests, 1
 integration test, 6 acceptance tests, 99% coverage, CRAP maximum 5.0, and no
-surviving or suspicious mutants. The new boundary test should increase the unit
-count by one without weakening or removing existing tests.
+surviving or suspicious mutants. The two boundary checks increase the unit
+count to 170 without weakening or removing existing tests.
 
 - [ ] **Step 2: Inspect mutation categories explicitly**
 
@@ -282,7 +282,7 @@ Run:
 UV_CACHE_DIR=/private/tmp/compute-cost-encoders-llms-uv-cache uv run pytest tests/unit tests/integration tests/acceptance -q
 ~~~
 
-Require all 176 tests to pass after the commit, not only before it.
+Require all 177 tests to pass after the commit, not only before it.
 
 - [ ] **Step 4: Push and verify local/tracking/remote state**
 

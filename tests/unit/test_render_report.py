@@ -8,8 +8,8 @@ from typing import cast
 
 import pytest
 import scripts.render_report as report_module
+from scripts._artifact_fields import _as_mapping
 from scripts.grid5000.checkpoint_metadata import (
-    _as_mapping,
     _checkpoint_metrics,
     build_checkpoint_metadata,
 )
