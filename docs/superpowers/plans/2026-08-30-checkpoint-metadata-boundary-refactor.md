@@ -25,7 +25,7 @@ mutmut.
 - Read: `scripts/render_report.py`
 - Read: `scripts/grid5000/checkpoint_metadata.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add a focused test that imports both modules and asserts the public builder
 facade is the exact callable owned by the Grid5000 checkpoint module:
@@ -36,10 +36,13 @@ import scripts.render_report as report_module
 
 
 def test_report_builder_is_owned_by_checkpoint_module() -> None:
-    assert report_module.build_checkpoint_metadata is checkpoint_module.build_checkpoint_metadata
+    assert (
+        report_module.build_checkpoint_metadata
+        is checkpoint_module.build_checkpoint_metadata
+    )
 ```
 
-- [ ] **Step 2: Run the focused test and verify red**
+- [x] **Step 2: Run the focused test and verify red**
 
 Run:
 
@@ -57,7 +60,7 @@ capturing this red result.
 - Modify: `scripts/grid5000/checkpoint_metadata.py`
 - Modify: `scripts/render_report.py`
 
-- [ ] **Step 1: Move the implementation without behavior edits**
+- [x] **Step 1: Move the implementation without behavior edits**
 
 Move `PROJECT_BUCKET_URI`, `build_checkpoint_metadata`, `_mapping_value`,
 `_text_value`, `_integer_value`, `_checkpoint_metrics`, and `_as_mapping` into
@@ -69,14 +72,14 @@ Preserve function signatures, validation order, error text, returned key
 values, metric ordering, and JSON-compatible value types exactly. Keep the
 builder free of file I/O and environment access.
 
-- [ ] **Step 2: Add the report compatibility facade**
+- [x] **Step 2: Add the report compatibility facade**
 
 Import `build_checkpoint_metadata` and the helper aliases still needed by
 report validation into `scripts/render_report.py`. Remove the old definitions
 and any imports that are unused after the move. Do not change the CLI or the
 call to the builder in `render_report`.
 
-- [ ] **Step 3: Run focused tests to reach green**
+- [x] **Step 3: Run focused tests to reach green**
 
 Run:
 
@@ -93,7 +96,7 @@ checkpoint validator tests all pass.
 - Modify: `tests/unit/test_render_report.py`
 - Modify: `tests/unit/test_checkpoint_metadata_boundary.py`
 
-- [ ] **Step 1: Move builder-helper imports to the canonical owner**
+- [x] **Step 1: Move builder-helper imports to the canonical owner**
 
 Import `_as_mapping` and `_checkpoint_metrics` from
 `scripts.grid5000.checkpoint_metadata` in the tests that exercise those
@@ -101,13 +104,13 @@ private helpers. Keep `build_checkpoint_metadata` imported from
 `scripts.render_report` in the compatibility tests so the old public import
 path remains explicitly covered.
 
-- [ ] **Step 2: Strengthen the boundary contract**
+- [x] **Step 2: Strengthen the boundary contract**
 
 Keep the identity assertion and add a direct canonical-module import check if
 needed for readability. Do not duplicate behavior fixtures; the existing
 exact metadata and failure-path tests remain the regression oracle.
 
-- [ ] **Step 3: Run focused static and behavioral checks**
+- [x] **Step 3: Run focused static and behavioral checks**
 
 Run:
 
@@ -126,7 +129,7 @@ Expected: no formatting, lint, type, or focused test failures.
 **Files:**
 - Modify none unless a gate identifies a direct regression in this refactor.
 
-- [ ] **Step 1: Run the complete repository gate**
+- [x] **Step 1: Run the complete repository gate**
 
 Run:
 
@@ -138,7 +141,7 @@ This must pass Ruff, formatting, ty, all unit/integration/acceptance tests,
 import-linter, CRAP, and mutation testing. The added boundary test increases
 the unit-test count by one; no existing test may be removed or weakened.
 
-- [ ] **Step 2: Inspect mutation categories explicitly**
+- [x] **Step 2: Inspect mutation categories explicitly**
 
 Run:
 
@@ -150,7 +153,7 @@ There must be no `survived` or `suspicious` mutants. If mutation cache state
 does not cover the moved source, rebuild the mutation workspace and rerun the
 same full campaign rather than reporting stale results.
 
-- [ ] **Step 3: Verify the final diff and worktree**
+- [x] **Step 3: Verify the final diff and worktree**
 
 Run:
 

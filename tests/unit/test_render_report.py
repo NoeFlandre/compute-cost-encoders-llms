@@ -8,9 +8,12 @@ from typing import cast
 
 import pytest
 import scripts.render_report as report_module
-from scripts.render_report import (
+from scripts.grid5000.checkpoint_metadata import (
     _as_mapping,
     _checkpoint_metrics,
+    build_checkpoint_metadata,
+)
+from scripts.render_report import (
     _non_negative_count,
     _positive_count,
     _read_json,
@@ -21,7 +24,6 @@ from scripts.render_report import (
     _validate_mean_logprobs,
     _validated_decision_counts,
     _validated_summary_models,
-    build_checkpoint_metadata,
     main,
     merge_artifacts,
     render_report,

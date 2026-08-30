@@ -11,12 +11,16 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import TypeGuard
 
-from compute_cost_encoders_llms.benchmark._mappings import _mapping_field
+from compute_cost_encoders_llms.benchmark._mappings import _mapping_field  # noqa: F401
 from compute_cost_encoders_llms.benchmark._numerics import _is_finite_number
 from compute_cost_encoders_llms.benchmark.example import candidate_labels
 from compute_cost_encoders_llms.benchmark.reporting import render_latex_document
-
-PROJECT_BUCKET_URI = "hf://buckets/NoeFlandre/compute-cost-encoders-llms"
+from scripts.grid5000.checkpoint_metadata import (
+    _as_mapping,
+    _mapping_value,
+    _text_value,
+    build_checkpoint_metadata,
+)
 
 
 def _read_json(path: Path) -> Mapping[str, object]:
@@ -145,86 +149,6 @@ def _non_negative_count(value: object) -> int:
 
 def _is_finite_non_negative(value: object) -> TypeGuard[int | float]:
     return _is_finite_number(value) and float(value) >= 0
-
-
-def build_checkpoint_metadata(
-    merged: Mapping[str, object],
-    *,
-    config_revision: str,
-    dataset_revision: str,
-    model_revision: str,
-    artifact_prefix: str,
-) -> dict[str, object]:
-    """Build the complete metadata required by the Grid5000 publisher."""
-
-    prefix = artifact_prefix.strip("/")
-    if not prefix or ".." in prefix:
-        raise ValueError("artifact prefix must be non-empty and traversal-free")
-    manifest = _mapping_value(merged, "manifest")
-    summary = _mapping_value(merged, "summary")
-    protocol = _mapping_value(manifest, "protocol")
-    source_commit = _text_value(manifest, "source_commit")
-    seed = _integer_value(manifest, "seed")
-    step = _integer_value(protocol, "repetitions")
-    return {
-        "source_commit": source_commit,
-        "config_revision": config_revision,
-        "dataset_revision": dataset_revision,
-        "model_revision": model_revision,
-        "seed": seed,
-        "step": step,
-        "metrics": _checkpoint_metrics(summary),
-        "complete": True,
-        "artifact_uri": f"{PROJECT_BUCKET_URI}/{prefix}",
-    }
-
-
-def _mapping_value(document: Mapping[str, object], field: str) -> Mapping[str, object]:
-    return _mapping_field(
-        document,
-        field,
-        required=True,
-        error_context="merged artifact",
-    )
-
-
-def _text_value(document: Mapping[str, object], field: str) -> str:
-    value = document.get(field)
-    if not isinstance(value, str) or not value:
-        raise ValueError(f"merged artifact field is not text: {field}")
-    return value
-
-
-def _integer_value(document: Mapping[str, object], field: str) -> int:
-    value = document.get(field)
-    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-        raise ValueError(
-            f"merged artifact field is not a non-negative integer: {field}"
-        )
-    return value
-
-
-def _checkpoint_metrics(summary: Mapping[str, object]) -> dict[str, object]:
-    models = summary.get("models")
-    if not isinstance(models, list) or not models:
-        raise ValueError("merged summary must contain model results")
-    metrics: dict[str, object] = {}
-    for model in models:
-        model_mapping = _as_mapping(model, "model result")
-        model_name = _text_value(model_mapping, "model")
-        latency = _mapping_value(model_mapping, "latency")
-        decisions = _mapping_value(model_mapping, "decision_counts")
-        metrics[model_name] = {
-            "median_text_to_logprob_ms": latency.get("median"),
-            "decision_counts": dict(decisions),
-        }
-    return metrics
-
-
-def _as_mapping(value: object, field: str) -> Mapping[str, object]:
-    if not isinstance(value, Mapping):
-        raise ValueError(f"merged artifact field is not an object: {field}")
-    return value
 
 
 def render_report(
