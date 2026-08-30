@@ -23,7 +23,6 @@ from compute_cost_encoders_llms.benchmark.cli import (
     _load_encoder,
     _optional_torch_module,
     _source_commit,
-    build_manifest,
     run,
     score_record,
 )
@@ -35,6 +34,7 @@ from compute_cost_encoders_llms.benchmark.encoder import (
     TorchLike,
 )
 from compute_cost_encoders_llms.benchmark.llm import LlamaScore
+from compute_cost_encoders_llms.benchmark.manifest import build_manifest
 from compute_cost_encoders_llms.benchmark.measurement import TimedValue
 from compute_cost_encoders_llms.benchmark.runtime import (
     CudaApi,

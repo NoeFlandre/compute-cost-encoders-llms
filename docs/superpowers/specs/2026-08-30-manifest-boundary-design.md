@@ -56,8 +56,7 @@ def build_manifest(
     hardware: Mapping[str, object],
     runtime: Mapping[str, object] | None = None,
     dependency_lock_sha256: str | None = None,
-) -> dict[str, object]:
-    ...
+) -> dict[str, object]: ...
 ```
 
 The implementation and its imports move without behavior edits. The returned

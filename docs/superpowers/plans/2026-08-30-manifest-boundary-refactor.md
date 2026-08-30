@@ -23,7 +23,7 @@ mutmut.
 - Read: `src/compute_cost_encoders_llms/benchmark/cli.py`
 - Read: `src/compute_cost_encoders_llms/benchmark/manifest.py`
 
-- [ ] **Step 1: Write the failing boundary test**
+- [x] **Step 1: Write the failing boundary test**
 
 Create the test before adding the new production module:
 
@@ -38,7 +38,7 @@ def test_cli_manifest_builder_is_owned_by_manifest_module() -> None:
     assert cli_module.build_manifest is manifest_module.build_manifest
 ```
 
-- [ ] **Step 2: Run the focused test and verify the expected red**
+- [x] **Step 2: Run the focused test and verify the expected red**
 
 Run:
 
@@ -56,7 +56,7 @@ capturing this failure.
 - Create: `src/compute_cost_encoders_llms/benchmark/manifest.py`
 - Modify: `src/compute_cost_encoders_llms/benchmark/cli.py`
 
-- [ ] **Step 1: Add the minimal canonical implementation**
+- [x] **Step 1: Add the minimal canonical implementation**
 
 Create `manifest.py` with the existing function body and only the imports it
 needs:
@@ -130,7 +130,7 @@ def build_manifest(
 Do not add validation, normalization, I/O, environment access, or new
 abstractions.
 
-- [ ] **Step 2: Replace the CLI implementation with a compatibility import**
+- [x] **Step 2: Replace the CLI implementation with a compatibility import**
 
 In `cli.py`, remove the `LANDUSE_QUESTION`, `LANDUSE_SENTENCE`,
 `candidate_label_forms`, and `candidate_labels` import block and delete the
@@ -145,7 +145,7 @@ Leave all callers, including `run()` and the command-line entry point,
 unchanged so `cli_module.build_manifest` remains available and identical to
 the canonical implementation.
 
-- [ ] **Step 3: Run the focused suite to reach green**
+- [x] **Step 3: Run the focused suite to reach green**
 
 Run:
 
@@ -162,7 +162,7 @@ CLI orchestration, and the new ownership assertion.
 - Modify: `tests/unit/test_benchmark_cli.py`
 - Modify: `tests/unit/test_manifest_boundary.py`
 
-- [ ] **Step 1: Import the behavior test from the canonical owner**
+- [x] **Step 1: Import the behavior test from the canonical owner**
 
 Remove `build_manifest` from the `benchmark.cli` import list in
 `test_benchmark_cli.py` and add:
@@ -175,14 +175,14 @@ Keep the existing `cli_module.build_manifest` monkeypatch in the `run()`
 test; that test verifies the CLI orchestration seam, while the boundary test
 covers the compatibility identity.
 
-- [ ] **Step 2: Keep the boundary test minimal and behavior-focused**
+- [x] **Step 2: Keep the boundary test minimal and behavior-focused**
 
 Retain exactly one identity assertion in `test_manifest_boundary.py`. Do not
 duplicate the detailed manifest fixture, because the existing exact-schema
 test remains the regression oracle for values, nested structures, and copied
 mappings.
 
-- [ ] **Step 3: Run focused static and behavioral checks**
+- [x] **Step 3: Run focused static and behavioral checks**
 
 Run:
 
@@ -201,7 +201,7 @@ Expected result: no formatting, lint, type, or focused test failures.
 **Files:**
 - Modify none unless a gate identifies a direct regression in this refactor.
 
-- [ ] **Step 1: Run the complete repository gate**
+- [x] **Step 1: Run the complete repository gate**
 
 Run:
 
@@ -214,7 +214,7 @@ architecture, CRAP, and mutation stages. The baseline has 166 unit tests, 1
 integration test, 6 acceptance tests, 99% coverage, CRAP maximum 5.0, and a
 fresh mutation campaign with 3,175 killed and 49 no-test CLI mutants.
 
-- [ ] **Step 2: Inspect mutation categories explicitly**
+- [x] **Step 2: Inspect mutation categories explicitly**
 
 Run:
 
@@ -227,7 +227,7 @@ not represented by the mutation workspace, move the generated ignored
 `mutants/` directory to a recoverable temporary path and rerun the same full
 campaign; do not report stale results.
 
-- [ ] **Step 3: Review the final diff and scope**
+- [x] **Step 3: Review the final diff and scope**
 
 Run:
 
