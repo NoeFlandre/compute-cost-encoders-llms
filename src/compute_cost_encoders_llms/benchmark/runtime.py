@@ -137,9 +137,9 @@ def _device_capability(cuda: CudaApi) -> list[int] | None:
         return None
     try:
         major, minor = getter()
+        return [int(major), int(minor)]
     except (AttributeError, RuntimeError, TypeError, ValueError):
         return None
-    return [int(major), int(minor)]
 
 
 def _device_name(cuda: CudaApi) -> str | None:

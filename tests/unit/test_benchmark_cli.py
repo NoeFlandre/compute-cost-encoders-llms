@@ -967,6 +967,23 @@ def test_cuda_precision_falls_back_to_fp16_then_fp32() -> None:
     assert select_encoder_precision(failed_capability, "cuda").name == "float32"
 
 
+@pytest.mark.parametrize("capability", [("invalid", 0), (None, 0)])
+def test_cuda_precision_falls_back_to_fp32_for_malformed_capability(
+    capability,
+) -> None:
+    torch_module = SimpleNamespace(
+        cuda=SimpleNamespace(
+            is_available=lambda: True,
+            is_bf16_supported=lambda: False,
+            get_device_capability=lambda: capability,
+        ),
+        float32=object(),
+        float16=object(),
+    )
+
+    assert select_encoder_precision(torch_module, "cuda").name == "float32"
+
+
 def test_quantization_from_filename_extracts_gguf_label() -> None:
     assert quantization_from_filename("Qwen3.6-27B-Q4_K_M.gguf") == "Q4_K_M"
     assert quantization_from_filename("model-f16.gguf") is None
