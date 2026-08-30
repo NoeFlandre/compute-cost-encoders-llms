@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import TypedDict
 
 from ._numerics import _number_value
+from .example import candidate_labels
 from .latex import (  # noqa: F401
     render_latex_document,
     render_latex_summary,
@@ -118,7 +119,8 @@ def _model_summary(
     model: str,
     records: list[MeasurementRecord],
 ) -> ModelSummary:
-    decisions = {"yes": 0, "no": 0}
+    labels = candidate_labels()
+    decisions = dict.fromkeys(labels, 0)
     for record in records:
         decisions[choose_decision(record["logprobs"])] += 1
     return {
@@ -129,10 +131,7 @@ def _model_summary(
         ),
         "model_time": _optional_latency_summary(_timing_values(records, "model_ms")),
         "logprob_time": summarize_latencies(_timing_values(records, "logprob_ms")),
-        "mean_logprobs": {
-            "yes": _mean_score(records, "yes"),
-            "no": _mean_score(records, "no"),
-        },
+        "mean_logprobs": {label: _mean_score(records, label) for label in labels},
         "decision_counts": decisions,
     }
 

@@ -94,6 +94,34 @@ def test_score_record_normalizes_backend_score() -> None:
     assert record["decision"] == "yes"
 
 
+def test_model_summary_uses_one_shared_candidate_label_order(monkeypatch) -> None:
+    calls: list[str] = []
+
+    def labels() -> tuple[str, str]:
+        calls.append("called")
+        return ("yes", "no")
+
+    monkeypatch.setattr(reporting_module, "candidate_labels", labels, raising=False)
+    record = cast(
+        MeasurementRecord,
+        {
+            "model": "encoder",
+            "repetition": 0,
+            "tokenization_ms": 1.0,
+            "model_ms": 2.0,
+            "logprob_ms": 0.1,
+            "text_to_logprob_ms": 3.1,
+            "logprobs": {"yes": -0.1, "no": -2.2},
+        },
+    )
+
+    summary = reporting_module._model_summary("encoder", [record])
+
+    assert calls == ["called"]
+    assert summary["mean_logprobs"] == {"yes": -0.1, "no": -2.2}
+    assert summary["decision_counts"] == {"yes": 1, "no": 0}
+
+
 def test_validate_measurement_requires_text_to_logprob_timing() -> None:
     record = {
         "model": "encoder",
