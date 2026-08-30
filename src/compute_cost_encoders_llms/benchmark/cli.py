@@ -6,7 +6,7 @@ import importlib
 import os
 import platform
 import subprocess
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -20,7 +20,12 @@ from .encoder import (
 )
 from .llm import LlamaClient
 from .manifest import build_manifest
-from .measurement import MeasurementRecord, measure_repetitions, score_record
+from .measurement import (
+    MeasurementRecord,
+    ScoreLike,
+    measure_repetitions,
+    score_record,
+)
 from .reporting import (
     write_json,
     write_measurement_artifacts,
@@ -121,13 +126,29 @@ def _load_encoder(
     )
 
 
+def _measure_records(
+    model: str,
+    operation: Callable[[], ScoreLike],
+    *,
+    warmups: int,
+    repetitions: int,
+) -> list[MeasurementRecord]:
+    timed = measure_repetitions(
+        operation,
+        warmups=warmups,
+        repetitions=repetitions,
+    )
+    return [score_record(model, index, item.value) for index, item in enumerate(timed)]
+
+
 def _encoder_records(
     config: BenchmarkConfig,
     dependency_lock_sha256: str | None,
 ) -> tuple[list[MeasurementRecord], Mapping[str, object]]:
     loaded = _load_encoder(config, dependency_lock_sha256)
     candidate_token_ids = build_candidate_token_ids(loaded.tokenizer)
-    timed = measure_repetitions(
+    records = _measure_records(
+        "encoder",
         lambda: score_transformers_once(
             loaded.tokenizer,
             loaded.model,
@@ -138,13 +159,7 @@ def _encoder_records(
         warmups=config.warmups,
         repetitions=config.repetitions,
     )
-    return (
-        [
-            score_record("encoder", index, item.value)
-            for index, item in enumerate(timed)
-        ],
-        loaded.runtime,
-    )
+    return records, loaded.runtime
 
 
 def _llm_records(
@@ -152,7 +167,8 @@ def _llm_records(
     dependency_lock_sha256: str | None,
 ) -> tuple[list[MeasurementRecord], Mapping[str, object]]:
     client = LlamaClient(config.llama_base_url)
-    timed = measure_repetitions(
+    records = _measure_records(
+        "llm",
         lambda: client.score(config.seed),
         warmups=config.warmups,
         repetitions=config.repetitions,
@@ -164,10 +180,7 @@ def _llm_records(
         llm_filename=config.llm_filename,
         dependency_lock_sha256=dependency_lock_sha256,
     )
-    return (
-        [score_record("llm", index, item.value) for index, item in enumerate(timed)],
-        runtime,
-    )
+    return records, runtime
 
 
 def run(config_path: Path, output_dir: Path, backend: str, run_id: str) -> None:
