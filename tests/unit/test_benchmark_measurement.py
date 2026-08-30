@@ -173,6 +173,30 @@ def test_logprob_validation_helpers_preserve_binary_finite_contract() -> None:
     assert has_finite({"yes": "not a number", "no": -2.2}) is False
 
 
+def test_logprob_validation_reuses_one_candidate_label_snapshot(monkeypatch) -> None:
+    labels = ("positive", "negative")
+    calls = 0
+
+    def changing_labels() -> tuple[str, str]:
+        nonlocal calls
+        calls += 1
+        return labels if calls == 1 else ("yes", "no")
+
+    monkeypatch.setattr(measurement_module, "candidate_labels", changing_labels)
+    record = {
+        "model": "encoder",
+        "repetition": 0,
+        "tokenization_ms": 1.0,
+        "model_ms": 2.0,
+        "logprob_ms": 0.1,
+        "text_to_logprob_ms": 3.1,
+        "logprobs": {"positive": -0.1, "negative": -2.2},
+    }
+
+    assert validate_measurement(record) == record
+    assert calls == 1
+
+
 def test_measurement_validation_uses_shared_candidate_labels(monkeypatch) -> None:
     labels = ("positive", "negative")
     monkeypatch.setattr(measurement_module, "candidate_labels", lambda: labels)
