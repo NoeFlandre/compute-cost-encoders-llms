@@ -73,6 +73,13 @@ def test_qa_rejects_timed_out_mutation_results(tmp_path: Path) -> None:
     assert "Mutation testing found" in result.stderr
 
 
+def test_qa_rejects_mutation_results_with_no_tests(tmp_path: Path) -> None:
+    result, _ = _run_qa(tmp_path, "src/example.py:10: no tests\n")
+
+    assert result.returncode != 0
+    assert "Mutation testing found" in result.stderr
+
+
 def test_qa_runs_all_stages_when_mutation_results_are_clean(tmp_path: Path) -> None:
     result, log_dir = _run_qa(tmp_path, "")
 

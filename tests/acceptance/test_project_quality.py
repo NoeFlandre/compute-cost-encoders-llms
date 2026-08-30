@@ -47,11 +47,11 @@ def test_qa_runs_the_integration_test_layer() -> None:
     assert "pytest tests/integration" in qa_script
 
 
-def test_qa_rejects_surviving_suspicious_or_timed_out_mutants() -> None:
+def test_qa_rejects_any_non_killed_mutant_result() -> None:
     qa_script = (PROJECT_ROOT / "scripts" / "qa.sh").read_text()
 
     assert 'mutation_results="$(uv run mutmut results)"' in qa_script
-    assert "grep -Eq ': (survived|suspicious|timeout)$'" in qa_script
+    assert 'if [[ -n "$mutation_results" ]]; then' in qa_script
 
 
 def test_ci_declares_package_install_and_cli_smoke_tests() -> None:

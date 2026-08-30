@@ -26,8 +26,8 @@ if find src scripts -type f -name "*.py" ! -name "__init__.py" -print -quit | gr
     uv run mutmut run
     mutation_results="$(uv run mutmut results)"
     printf '%s\n' "$mutation_results"
-    if grep -Eq ': (survived|suspicious|timeout)$' <<<"$mutation_results"; then
-        printf '%s\n' "Mutation testing found surviving, suspicious, or timed-out mutants." >&2
+    if [[ -n "$mutation_results" ]]; then
+        printf '%s\n' "Mutation testing found non-killed mutants." >&2
         exit 1
     fi
 else
