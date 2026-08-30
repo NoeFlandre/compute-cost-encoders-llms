@@ -96,15 +96,8 @@ def _bf16_supported(cuda: CudaApi) -> bool:
 
 
 def _fp16_supported(cuda: CudaApi) -> bool:
-    getter = getattr(cuda, "get_device_capability", None)
-    if not callable(getter):
-        return False
-    try:
-        major, minor = getter()
-        capability = (int(major), int(minor))
-    except (AttributeError, RuntimeError, TypeError, ValueError):
-        return False
-    return capability >= (5, 3)
+    capability = _device_capability(cuda)
+    return capability is not None and tuple(capability) >= (5, 3)
 
 
 def _unavailable_cuda_metadata() -> dict[str, object]:

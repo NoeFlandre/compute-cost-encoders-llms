@@ -893,6 +893,20 @@ def test_cpu_precision_uses_fp32() -> None:
         select_encoder_precision(SimpleNamespace(), "cpu")
 
 
+def test_fp16_support_reuses_normalized_device_capability(monkeypatch) -> None:
+    cuda = object()
+    calls: list[CudaApi] = []
+
+    def capability(value: CudaApi) -> list[int] | None:
+        calls.append(value)
+        return [5, 3]
+
+    monkeypatch.setattr(runtime_module, "_device_capability", capability)
+
+    assert runtime_module._fp16_supported(cuda) is True
+    assert calls == [cuda]
+
+
 def test_cuda_precision_falls_back_to_fp16_then_fp32() -> None:
     fp16 = select_encoder_precision(
         FakePrecisionTorch(FakeCuda(bf16=False, capability=(7, 0))), "cuda"
