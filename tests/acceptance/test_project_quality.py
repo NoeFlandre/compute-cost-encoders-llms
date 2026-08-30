@@ -47,6 +47,13 @@ def test_qa_runs_the_integration_test_layer() -> None:
     assert "pytest tests/integration" in qa_script
 
 
+def test_qa_rejects_surviving_or_suspicious_mutants() -> None:
+    qa_script = (PROJECT_ROOT / "scripts" / "qa.sh").read_text()
+
+    assert 'mutation_results="$(uv run mutmut results)"' in qa_script
+    assert "grep -Eq ': (survived|suspicious)$'" in qa_script
+
+
 def test_ci_declares_package_install_and_cli_smoke_tests() -> None:
     for workflow_name in ("qa.yml", "release.yml"):
         workflow = (PROJECT_ROOT / ".github" / "workflows" / workflow_name).read_text()

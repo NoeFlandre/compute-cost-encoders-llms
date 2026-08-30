@@ -24,6 +24,12 @@ uv run crap4py src scripts --lcov coverage.lcov --max-crap 5.99 --max-workers 1
 # QA_STAGE: mutation tests
 if find src scripts -type f -name "*.py" ! -name "__init__.py" -print -quit | grep -q .; then
     uv run mutmut run
+    mutation_results="$(uv run mutmut results)"
+    printf '%s\n' "$mutation_results"
+    if grep -Eq ': (survived|suspicious)$' <<<"$mutation_results"; then
+        printf '%s\n' "Mutation testing found surviving or suspicious mutants." >&2
+        exit 1
+    fi
 else
     printf '%s\n' "No implementation modules yet; mutation stage is vacuously satisfied."
 fi

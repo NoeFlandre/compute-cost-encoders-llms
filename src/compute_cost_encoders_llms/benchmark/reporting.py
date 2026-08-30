@@ -48,8 +48,6 @@ def _json_options(*, compact: bool) -> _JsonOptions:
         options["separators"] = (",", ":")
     else:
         options["indent"] = 2
-    if options["ensure_ascii"] is not False:
-        raise ValueError("JSON must preserve Unicode")
     return options
 
 
@@ -170,6 +168,16 @@ def write_jsonl(path: Path, records: Iterable[Mapping[str, object]]) -> None:
     """Write validated records as deterministic JSONL."""
 
     _write_validated_jsonl(path, (validate_measurement(record) for record in records))
+
+
+def write_measurement_artifacts(
+    output_dir: Path, records: Iterable[Mapping[str, object]]
+) -> None:
+    """Write validated measurement and summary artifacts for one run."""
+
+    validated = _validated_records(records)
+    _write_validated_jsonl(output_dir / "measurements.jsonl", validated)
+    write_json(output_dir / "summary.json", _summary_from_validated_records(validated))
 
 
 def _write_validated_jsonl(path: Path, records: Iterable[MeasurementRecord]) -> None:

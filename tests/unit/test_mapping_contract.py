@@ -24,3 +24,8 @@ def test_mapping_field_is_shared_with_explicit_optional_and_required_modes() -> 
             required=True,
             error_context="merged artifact",
         )
+
+
+def test_mapping_field_uses_document_as_default_error_context() -> None:
+    with pytest.raises(ValueError, match=r"^document field is not an object: value$"):
+        reporting_module._mapping_field({}, "value", required=True)

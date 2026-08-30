@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import locale
 from collections.abc import Callable, Mapping
+from pathlib import Path
 from typing import cast
 
 import pytest
@@ -12,6 +14,7 @@ import compute_cost_encoders_llms.benchmark.reporting as reporting_module
 from compute_cost_encoders_llms.benchmark.encoder import _variant_logprob
 from compute_cost_encoders_llms.benchmark.measurement import (
     MeasurementError,
+    MeasurementRecord,
     _required_float,
     choose_decision,
     measure_repetitions,
@@ -177,6 +180,102 @@ def test_validated_reporting_helpers_reuse_one_validation_pass(
         build_validated_summary([validated[0], validated[0]])
     with pytest.raises(MeasurementError, match=r"^no measurements$"):
         build_validated_summary([])
+
+
+def test_write_measurement_artifacts_validates_once_and_writes_both_outputs(
+    monkeypatch, tmp_path
+) -> None:
+    record = {
+        "model": "encoder",
+        "repetition": 0,
+        "tokenization_ms": 1.0,
+        "model_ms": 2.0,
+        "logprob_ms": 0.1,
+        "text_to_logprob_ms": 3.1,
+        "logprobs": {"yes": -0.1, "no": -2.2},
+    }
+    second = cast(MeasurementRecord, {**record, "repetition": 1})
+    expected_summary = build_summary([record, second])
+    calls: list[object] = []
+    original_validate = reporting_module.validate_measurement
+
+    def capture_validate(value: Mapping[str, object]) -> object:
+        calls.append(value)
+        return original_validate(value)
+
+    monkeypatch.setattr(reporting_module, "validate_measurement", capture_validate)
+
+    reporting_module.write_measurement_artifacts(tmp_path, [record, second])
+
+    assert len(calls) == 2
+    assert (tmp_path / "measurements.jsonl").read_text() == "\n".join(
+        (json_line(record), json_line(second))
+    ) + "\n"
+    assert sorted(path.name for path in tmp_path.iterdir()) == [
+        "measurements.jsonl",
+        "summary.json",
+    ]
+    assert json.loads((tmp_path / "summary.json").read_text()) == expected_summary
+
+
+def test_validated_reporting_grouping_preserves_identity_and_errors() -> None:
+    record = cast(
+        MeasurementRecord,
+        {
+            "model": "encoder",
+            "repetition": 0,
+            "tokenization_ms": 1.0,
+            "model_ms": 2.0,
+            "logprob_ms": 0.1,
+            "text_to_logprob_ms": 3.1,
+            "logprobs": {"yes": -0.1, "no": -2.2},
+        },
+    )
+    second = cast(MeasurementRecord, {**record, "repetition": 1})
+
+    grouped = reporting_module._group_validated_records([record, second])
+
+    assert list(grouped) == ["encoder"]
+    assert len(grouped["encoder"]) == 2
+    assert reporting_module._summary_from_grouped(grouped)["models"][0]["model"] == (
+        "encoder"
+    )
+    with pytest.raises(MeasurementError, match=r"^duplicate measurement repetition$"):
+        reporting_module._group_validated_records([record, record])
+    with pytest.raises(MeasurementError, match=r"^no measurements$"):
+        reporting_module._group_validated_records([])
+
+
+def test_reporting_writers_pass_explicit_utf8_encoding() -> None:
+    class RecordingPath:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, object]] = []
+
+        def write_text(self, _content: str, **kwargs: object) -> int:
+            self.calls.append(kwargs)
+            return 0
+
+    path = RecordingPath()
+    write_json(cast(Path, path), {"é": "é"})
+    reporting_module._write_validated_jsonl(
+        cast(Path, path),
+        [
+            cast(
+                MeasurementRecord,
+                {
+                    "model": "encoder",
+                    "repetition": 0,
+                    "tokenization_ms": 1.0,
+                    "model_ms": 2.0,
+                    "logprob_ms": 0.1,
+                    "text_to_logprob_ms": 3.1,
+                    "logprobs": {"yes": -0.1, "no": -2.2},
+                },
+            )
+        ],
+    )
+
+    assert [call["encoding"] for call in path.calls] == ["utf-8", "utf-8"]
 
 
 def test_write_json_preserves_unicode_under_ascii_locale(tmp_path) -> None:

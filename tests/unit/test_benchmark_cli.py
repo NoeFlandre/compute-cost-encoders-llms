@@ -192,7 +192,7 @@ def capture_json(
     calls.append((path, document))
 
 
-def capture_jsonl(
+def capture_measurement_artifacts(
     calls: list[tuple[Path, object]], path: Path, document: object
 ) -> None:
     calls.append((path, document))
@@ -379,7 +379,7 @@ def test_load_encoder_uses_pinned_cuda_model(monkeypatch) -> None:
         partial(capture_runtime_metadata, runtime_calls),
     )
 
-    loaded = _load_encoder(config)
+    loaded = _load_encoder(config, "lock-sha")
 
     assert loaded.tokenizer is tokenizer
     assert loaded.model is model
@@ -409,7 +409,7 @@ def test_load_encoder_uses_pinned_cuda_model(monkeypatch) -> None:
             "dtype": "float32",
             "llama_cpp_revision": config.llama_cpp_revision,
             "llm_filename": config.llm_filename,
-            "dependency_lock_sha256": None,
+            "dependency_lock_sha256": "lock-sha",
         }
     ]
 
@@ -702,7 +702,7 @@ def test_run_writes_canonical_artifacts_and_manifest_contract(
     ]
     calls: dict[str, object] = {}
     json_calls: list[tuple[Path, object]] = []
-    jsonl_calls: list[tuple[Path, object]] = []
+    artifact_calls: list[tuple[Path, object]] = []
 
     monkeypatch.setattr(
         cli_module.BenchmarkConfig,
@@ -725,15 +725,10 @@ def test_run_writes_canonical_artifacts_and_manifest_contract(
     monkeypatch.setattr(cli_module, "_config_digest", lambda path: "config-sha")
     monkeypatch.setattr(
         cli_module,
-        "_summary_from_validated_records",
-        lambda value: {"records": value},
+        "write_measurement_artifacts",
+        partial(capture_measurement_artifacts, artifact_calls),
     )
     monkeypatch.setattr(cli_module, "write_json", partial(capture_json, json_calls))
-    monkeypatch.setattr(
-        cli_module,
-        "_write_validated_jsonl",
-        partial(capture_jsonl, jsonl_calls),
-    )
 
     run(config_path, output_dir, backend, "run-001")
 
@@ -759,21 +754,28 @@ def test_run_writes_canonical_artifacts_and_manifest_contract(
                 "config_sha256": "config-sha",
                 "backend": backend,
             },
-        ),
-        (output_dir / "summary.json", {"records": records}),
+        )
     ]
-    assert jsonl_calls == [(output_dir / "measurements.jsonl", records)]
+    assert artifact_calls == [(output_dir, records)]
 
     run(config_path, output_dir, backend, "run-001")
 
 
-def test_run_rejects_unsupported_backend_with_exact_error(tmp_path) -> None:
+def test_run_rejects_unsupported_backend_before_entering_a_backend(
+    tmp_path, monkeypatch
+) -> None:
     config_path = tmp_path / "config.toml"
     config_path.write_text(
         "encoder_revision = 'c5955035435e2bf121cde7f3c8863ef52ff35d82'\n"
         "llm_revision = '8a7ee08e8b9bfb857107ecc25a5599d2f38b76f8'\n"
         "llama_cpp_revision = '6503355df0eb4f65875012523263c302fe0088c1'\n"
     )
+
+    def unexpected_backend(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("backend execution must not start")
+
+    monkeypatch.setattr(cli_module, "_encoder_records", unexpected_backend)
+    monkeypatch.setattr(cli_module, "_llm_records", unexpected_backend)
 
     with pytest.raises(ValueError, match=r"^unsupported backend: invalid$"):
         run(config_path, tmp_path / "output", "invalid", "run-001")
@@ -815,6 +817,17 @@ def test_dependency_lock_digest_uses_repo_fallback_and_can_return_none(
     )
     expected = hashlib.sha256(repository_lock.read_bytes()).hexdigest()
     assert _dependency_lock_digest(config_path) == expected
+
+    fallback_root = tmp_path / "repository"
+    module_path = fallback_root / "src" / "package" / "benchmark" / "cli.py"
+    module_path.parent.mkdir(parents=True)
+    fallback_lock = fallback_root / "uv.lock"
+    fallback_lock.write_text("fallback-lock")
+    monkeypatch.setattr(cli_module, "__file__", str(module_path))
+    assert (
+        _dependency_lock_digest(config_path)
+        == hashlib.sha256(b"fallback-lock").hexdigest()
+    )
 
     monkeypatch.setattr(cli_module, "__file__", str(tmp_path / "isolated.py"))
     assert _dependency_lock_digest(config_path) is None
@@ -1081,6 +1094,10 @@ def test_runtime_metadata_driver_and_device_helpers_fail_closed() -> None:
     assert (
         _device_name(cast(CudaApi, SimpleNamespace(get_device_name=lambda: 7))) is None
     )
+
+
+def test_device_capability_returns_none_when_attribute_is_missing() -> None:
+    assert runtime_module._device_capability(object()) is None
 
 
 def test_cuda_boundary_declares_dynamic_object_contract() -> None:

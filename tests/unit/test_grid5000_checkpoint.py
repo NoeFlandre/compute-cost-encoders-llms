@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from typing import cast
 
 import pytest
 from scripts.grid5000.checkpoint_metadata import main, validate_file, validate_metadata
@@ -92,6 +93,21 @@ def test_checkpoint_metadata_file_reports_invalid_json(tmp_path: Path) -> None:
     errors = validate_file(metadata_path)
 
     assert errors[0].startswith("could not read JSON metadata:")
+
+
+def test_validate_file_passes_explicit_utf8_encoding() -> None:
+    class RecordingPath:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, object]] = []
+
+        def read_text(self, **kwargs: object) -> str:
+            self.calls.append(kwargs)
+            return json.dumps(VALID_METADATA)
+
+    path = RecordingPath()
+
+    assert validate_file(cast(Path, path)) == []
+    assert path.calls == [{"encoding": "utf-8"}]
 
 
 def test_checkpoint_metadata_cli_accepts_a_valid_file(

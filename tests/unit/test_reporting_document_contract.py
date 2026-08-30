@@ -48,6 +48,23 @@ def test_json_options_declares_unicode_policy_as_literal() -> None:
     assert ensure_ascii.value is False
 
 
+def test_json_options_preserves_modes_and_rejects_non_boolean() -> None:
+    assert reporting_module._json_options(compact=True) == {
+        "ensure_ascii": False,
+        "sort_keys": True,
+        "separators": (",", ":"),
+    }
+    assert reporting_module._json_options(compact=False) == {
+        "ensure_ascii": False,
+        "sort_keys": True,
+        "indent": 2,
+    }
+    with pytest.raises(TypeError, match=r"^compact must be a boolean$"):
+        reporting_module._json_options(compact=cast(bool, 1))
+    source = Path(reporting_module.__file__).read_text(encoding="utf-8")
+    assert 'if options["ensure_ascii"] is not False' not in source
+
+
 def test_number_text_uses_shared_numeric_conversion(monkeypatch) -> None:
     monkeypatch.setattr(reporting_module, "_number_value", lambda _value: 12.5)
 

@@ -27,6 +27,9 @@ remaining observable contracts: missing CUDA capability access, dependency-lock
 propagation, unsupported backends, mapping error context, serialization options,
 and explicit UTF-8 file boundaries. The unreachable defensive JSON branch will
 be removed because `ensure_ascii` is a literal invariant in the same function.
+The QA script will also inspect mutmut's final results and fail on any
+`survived` or `suspicious` status, making the zero-survivor contract
+enforceable for future changes.
 
 ## Testing
 

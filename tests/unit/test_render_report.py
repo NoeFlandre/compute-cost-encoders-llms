@@ -307,6 +307,63 @@ def test_render_report_reads_canonical_artifact_names(tmp_path, monkeypatch) -> 
     ]
 
 
+def test_read_json_passes_explicit_utf8_encoding() -> None:
+    class RecordingPath:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, object]] = []
+
+        def read_text(self, **kwargs: object) -> str:
+            self.calls.append(kwargs)
+            return "{}"
+
+    path = RecordingPath()
+
+    assert _read_json(cast(Path, path)) == {}
+    assert path.calls == [{"encoding": "utf-8"}]
+
+
+def test_render_report_passes_explicit_utf8_encoding_to_outputs(monkeypatch) -> None:
+    class RecordingPath:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, dict[str, object]]] = []
+
+        def write_text(self, content: str, **kwargs: object) -> None:
+            self.calls.append((content, kwargs))
+
+    output = RecordingPath()
+    checkpoint = RecordingPath()
+    monkeypatch.setattr(report_module, "_read_json", lambda _path: {})
+    monkeypatch.setattr(
+        report_module,
+        "merge_artifacts",
+        lambda *_args: {"manifest": {}, "summary": {}},
+    )
+    monkeypatch.setattr(
+        report_module,
+        "render_latex_document",
+        lambda _manifest, _summary: "latex",
+    )
+    monkeypatch.setattr(
+        report_module,
+        "build_checkpoint_metadata",
+        lambda *_args, **_kwargs: {"complete": True},
+    )
+    monkeypatch.setenv("GRID5000_CONFIG_REVISION", "config")
+    monkeypatch.setenv("GRID5000_DATASET_REVISION", "dataset")
+    monkeypatch.setenv("GRID5000_MODEL_REVISION", "model")
+    monkeypatch.setenv("GRID5000_ARTIFACT_PREFIX", "runs/example")
+
+    render_report(
+        Path("encoder"),
+        Path("llm"),
+        cast(Path, output),
+        checkpoint=cast(Path, checkpoint),
+    )
+
+    assert output.calls == [("latex", {"encoding": "utf-8"})]
+    assert checkpoint.calls == [('{\n  "complete": true\n}\n', {"encoding": "utf-8"})]
+
+
 def test_merge_artifacts_rejects_incomplete_backend_summaries() -> None:
     manifest = {"source_commit": "a" * 40, "example": {"sentence": "x"}}
     complete = {
