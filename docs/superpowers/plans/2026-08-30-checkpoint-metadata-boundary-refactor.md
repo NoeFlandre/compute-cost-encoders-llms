@@ -175,7 +175,7 @@ focused boundary/test ownership changes are present.
 - `tests/unit/test_checkpoint_metadata_boundary.py`
 - `tests/unit/test_render_report.py`
 
-- [ ] **Step 1: Stage only the approved paths**
+- [x] **Step 1: Stage only the approved paths**
 
 Run:
 
@@ -184,7 +184,7 @@ git add docs/superpowers/specs/2026-08-30-checkpoint-metadata-boundary-design.md
 git diff --cached --check
 ```
 
-- [ ] **Step 2: Commit with a focused Conventional Commit message**
+- [x] **Step 2: Commit with a focused Conventional Commit message**
 
 Run:
 
@@ -192,7 +192,7 @@ Run:
 git commit -m "refactor: isolate checkpoint metadata construction"
 ```
 
-- [ ] **Step 3: Push and verify remote synchronization**
+- [x] **Step 3: Push and verify remote synchronization**
 
 Run:
 
