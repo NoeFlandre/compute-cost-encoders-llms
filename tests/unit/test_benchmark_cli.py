@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import sys
 from collections.abc import Callable
 from functools import partial
 from pathlib import Path
@@ -204,6 +205,147 @@ def capture_measurement_artifacts(
     calls: list[tuple[Path, object]], path: Path, document: object
 ) -> None:
     calls.append((path, document))
+
+
+def test_parser_parses_all_benchmark_options(tmp_path) -> None:
+    config_path = tmp_path / "benchmark.toml"
+    output_dir = tmp_path / "output"
+
+    args = cli_module._parser().parse_args(
+        [
+            "--config",
+            str(config_path),
+            "--output-dir",
+            str(output_dir),
+            "--backend",
+            "llm",
+            "--run-id",
+            "run-001",
+        ]
+    )
+
+    assert args.config == config_path
+    assert args.output_dir == output_dir
+    assert args.backend == "llm"
+    assert args.run_id == "run-001"
+
+
+@pytest.mark.parametrize(
+    "omitted",
+    ["--config", "--output-dir", "--backend", "--run-id"],
+)
+def test_parser_requires_each_benchmark_option(omitted, tmp_path, capsys) -> None:
+    values = {
+        "--config": str(tmp_path / "benchmark.toml"),
+        "--output-dir": str(tmp_path / "output"),
+        "--backend": "encoder",
+        "--run-id": "run-001",
+    }
+    argv = [
+        item
+        for option, value in values.items()
+        if option != omitted
+        for item in (option, value)
+    ]
+
+    with pytest.raises(SystemExit) as error:
+        cli_module._parser().parse_args(argv)
+
+    assert error.value.code == 2
+    assert f"the following arguments are required: {omitted}" in capsys.readouterr().err
+
+
+def test_parser_rejects_an_unsupported_backend(tmp_path, capsys) -> None:
+    with pytest.raises(SystemExit) as error:
+        cli_module._parser().parse_args(
+            [
+                "--config",
+                str(tmp_path / "benchmark.toml"),
+                "--output-dir",
+                str(tmp_path / "output"),
+                "--backend",
+                "unsupported",
+                "--run-id",
+                "run-001",
+            ]
+        )
+
+    assert error.value.code == 2
+    assert "invalid choice" in capsys.readouterr().err
+
+
+def test_parser_help_lists_the_benchmark_options(capsys) -> None:
+    with pytest.raises(SystemExit) as error:
+        cli_module._parser().parse_args(["--help"])
+
+    assert error.value.code == 0
+    help_text = capsys.readouterr().out
+    assert all(
+        option in help_text
+        for option in ("--config", "--output-dir", "--backend", "--run-id")
+    )
+
+
+def test_parser_does_not_derive_help_from_the_module_docstring(monkeypatch) -> None:
+    monkeypatch.setattr(cli_module, "__doc__", "unrelated module documentation")
+
+    assert cli_module._parser().description is None
+
+
+def test_main_delegates_supplied_arguments_to_run(monkeypatch, tmp_path) -> None:
+    calls = []
+    config_path = tmp_path / "benchmark.toml"
+    output_dir = tmp_path / "output"
+
+    def capture_run(config, output, backend, run_id) -> None:
+        calls.append((config, output, backend, run_id))
+
+    monkeypatch.setattr(cli_module, "run", capture_run)
+
+    cli_module.main(
+        [
+            "--config",
+            str(config_path),
+            "--output-dir",
+            str(output_dir),
+            "--backend",
+            "encoder",
+            "--run-id",
+            "run-002",
+        ]
+    )
+
+    assert calls == [(config_path, output_dir, "encoder", "run-002")]
+
+
+def test_main_without_arguments_reads_process_arguments(monkeypatch, tmp_path) -> None:
+    calls = []
+    config_path = tmp_path / "benchmark.toml"
+    output_dir = tmp_path / "output"
+
+    def capture_run(config, output, backend, run_id) -> None:
+        calls.append((config, output, backend, run_id))
+
+    monkeypatch.setattr(cli_module, "run", capture_run)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "benchmark",
+            "--config",
+            str(config_path),
+            "--output-dir",
+            str(output_dir),
+            "--backend",
+            "llm",
+            "--run-id",
+            "run-003",
+        ],
+    )
+
+    cli_module.main()
+
+    assert calls == [(config_path, output_dir, "llm", "run-003")]
 
 
 def test_build_manifest_captures_reproducibility_fields(monkeypatch) -> None:

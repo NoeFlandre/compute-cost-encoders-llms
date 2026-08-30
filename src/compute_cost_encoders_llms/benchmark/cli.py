@@ -6,7 +6,7 @@ import importlib
 import os
 import platform
 import subprocess
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -230,7 +230,7 @@ def _optional_torch_module() -> object | None:
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--backend", choices=("encoder", "llm"), required=True)
@@ -238,8 +238,8 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main() -> None:
-    args = _parser().parse_args()
+def main(argv: Sequence[str] | None = None) -> None:
+    args = _parser().parse_args(argv)
     run(args.config, args.output_dir, args.backend, args.run_id)
 
 
