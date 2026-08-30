@@ -11,10 +11,9 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import TypeGuard
 
-from compute_cost_encoders_llms.benchmark._mappings import _mapping_field  # noqa: F401
 from compute_cost_encoders_llms.benchmark._numerics import _is_finite_number
 from compute_cost_encoders_llms.benchmark.example import candidate_labels
-from compute_cost_encoders_llms.benchmark.reporting import render_latex_document
+from compute_cost_encoders_llms.benchmark.latex import render_latex_document
 from scripts._artifact_fields import _as_mapping, _mapping_value, _text_value
 from scripts.grid5000.checkpoint_metadata import build_checkpoint_metadata
 
