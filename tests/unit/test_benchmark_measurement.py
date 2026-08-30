@@ -173,6 +173,23 @@ def test_logprob_validation_helpers_preserve_binary_finite_contract() -> None:
     assert has_finite({"yes": "not a number", "no": -2.2}) is False
 
 
+def test_measurement_validation_uses_shared_candidate_labels(monkeypatch) -> None:
+    labels = ("positive", "negative")
+    monkeypatch.setattr(measurement_module, "candidate_labels", lambda: labels)
+    record = {
+        "model": "encoder",
+        "repetition": 0,
+        "tokenization_ms": 1.0,
+        "model_ms": 2.0,
+        "logprob_ms": 0.1,
+        "text_to_logprob_ms": 3.1,
+        "logprobs": {"positive": -0.1, "negative": -2.2},
+        "decision": "positive",
+    }
+
+    assert validate_measurement(record) == record
+
+
 def test_json_line_is_sorted_and_serializable(tmp_path) -> None:
     assert json_line({"z": 1, "a": 2}) == '{"a":2,"z":1}'
     assert json_line({"é": "é"}) == '{"é":"é"}'

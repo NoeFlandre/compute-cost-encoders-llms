@@ -178,23 +178,24 @@ def _required_float(value: object) -> float:
 
 def _validate_logprobs(record: Mapping[str, object]) -> dict[str, float]:
     logprobs = record["logprobs"]
+    labels = candidate_labels()
     if not _has_binary_logprob_keys(logprobs):
         raise MeasurementError("logprobs must contain yes and no")
     if not _has_finite_binary_logprobs(logprobs):
         raise MeasurementError("logprobs must be finite")
-    return {label: float(logprobs[label]) for label in ("yes", "no")}
+    return {label: float(logprobs[label]) for label in labels}
 
 
 def _has_binary_logprob_keys(
     value: object,
 ) -> TypeGuard[Mapping[str, object]]:
-    return isinstance(value, Mapping) and set(value) == {"yes", "no"}
+    return isinstance(value, Mapping) and set(value) == set(candidate_labels())
 
 
 def _has_finite_binary_logprobs(
     logprobs: Mapping[str, object],
 ) -> TypeGuard[Mapping[str, int | float]]:
-    return all(_is_finite_number(logprobs[label]) for label in ("yes", "no"))
+    return all(_is_finite_number(logprobs[label]) for label in candidate_labels())
 
 
 def _validate_optional_fields(
@@ -210,7 +211,7 @@ def _validate_decision(
     if "decision" not in record:
         return
     decision = record["decision"]
-    if not isinstance(decision, str) or decision not in {"yes", "no"}:
+    if not isinstance(decision, str) or decision not in candidate_labels():
         raise MeasurementError("decision must be yes or no")
     if decision != choose_decision(scores):
         raise MeasurementError("decision is inconsistent with logprobs")
