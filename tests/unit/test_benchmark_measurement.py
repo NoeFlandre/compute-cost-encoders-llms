@@ -11,7 +11,7 @@ from scripts.render_report import merge_artifacts
 
 import compute_cost_encoders_llms.benchmark.measurement as measurement_module
 import compute_cost_encoders_llms.benchmark.reporting as reporting_module
-from compute_cost_encoders_llms.benchmark.encoder import _variant_logprob
+from compute_cost_encoders_llms.benchmark.encoder import EncoderScore, _variant_logprob
 from compute_cost_encoders_llms.benchmark.latex import (
     _comparison_section,
     _count_text,
@@ -24,6 +24,7 @@ from compute_cost_encoders_llms.benchmark.measurement import (
     _required_float,
     choose_decision,
     measure_repetitions,
+    score_record,
     summarize_latencies,
     validate_measurement,
 )
@@ -61,6 +62,36 @@ def test_summarize_latencies_handles_single_and_invalid_samples() -> None:
         match=r"^latencies must contain finite non-negative values$",
     ):
         summarize_latencies([-1.0])
+
+
+def test_score_record_normalizes_backend_score() -> None:
+    score = EncoderScore(
+        logprobs={"yes": -0.1, "no": -2.2},
+        tokenization_ms=1.0,
+        model_ms=2.0,
+        logprob_ms=0.1,
+        text_to_logprob_ms=3.1,
+        input_tokens=12,
+    )
+
+    record = score_record("encoder", 3, score)
+
+    assert record["model"] == "encoder"
+    assert record["repetition"] == 3
+    assert record["input_tokens"] == 12
+    assert record["logprobs"] == {"yes": -0.1, "no": -2.2}
+    assert set(record) == {
+        "model",
+        "repetition",
+        "tokenization_ms",
+        "model_ms",
+        "logprob_ms",
+        "text_to_logprob_ms",
+        "input_tokens",
+        "logprobs",
+        "decision",
+    }
+    assert record["decision"] == "yes"
 
 
 def test_validate_measurement_requires_text_to_logprob_timing() -> None:

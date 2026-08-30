@@ -12,16 +12,15 @@ from pathlib import Path
 
 from .config import BenchmarkConfig
 from .encoder import (
-    EncoderScore,
     ModelLike,
     TokenizerLike,
     TorchLike,
     build_candidate_token_ids,
     score_transformers_once,
 )
-from .llm import LlamaClient, LlamaScore
+from .llm import LlamaClient
 from .manifest import build_manifest
-from .measurement import MeasurementRecord, choose_decision, measure_repetitions
+from .measurement import MeasurementRecord, measure_repetitions, score_record
 from .reporting import (
     write_json,
     write_measurement_artifacts,
@@ -61,24 +60,6 @@ def _as_torch(value: object) -> TorchLike:
             "loaded torch module does not implement the encoder interface"
         )
     return value
-
-
-def score_record(
-    model: str, repetition: int, score: EncoderScore | LlamaScore
-) -> MeasurementRecord:
-    """Normalize either backend result into the common measurement schema."""
-
-    return {
-        "model": model,
-        "repetition": repetition,
-        "tokenization_ms": score.tokenization_ms,
-        "model_ms": score.model_ms,
-        "logprob_ms": score.logprob_ms,
-        "text_to_logprob_ms": score.text_to_logprob_ms,
-        "input_tokens": score.input_tokens,
-        "logprobs": score.logprobs,
-        "decision": choose_decision(score.logprobs),
-    }
 
 
 def _source_commit() -> str:

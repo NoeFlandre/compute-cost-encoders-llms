@@ -49,12 +49,23 @@ the existing runtime behavior and type contract.
 
 ```python
 class ScoreLike(Protocol):
-    tokenization_ms: float | None
-    model_ms: float | None
-    logprob_ms: float
-    text_to_logprob_ms: float
-    input_tokens: int | None
-    logprobs: dict[str, float]
+    @property
+    def tokenization_ms(self) -> float | None: ...
+
+    @property
+    def model_ms(self) -> float | None: ...
+
+    @property
+    def logprob_ms(self) -> float: ...
+
+    @property
+    def text_to_logprob_ms(self) -> float: ...
+
+    @property
+    def input_tokens(self) -> int | None: ...
+
+    @property
+    def logprobs(self) -> dict[str, float]: ...
 
 
 def score_record(

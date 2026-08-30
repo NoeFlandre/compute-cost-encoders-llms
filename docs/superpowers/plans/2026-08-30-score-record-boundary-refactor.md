@@ -57,20 +57,29 @@ protocol after `MeasurementRecord`:
 
 ```python
 class ScoreLike(Protocol):
-    tokenization_ms: float | None
-    model_ms: float | None
-    logprob_ms: float
-    text_to_logprob_ms: float
-    input_tokens: int | None
-    logprobs: dict[str, float]
+    @property
+    def tokenization_ms(self) -> float | None: ...
+
+    @property
+    def model_ms(self) -> float | None: ...
+
+    @property
+    def logprob_ms(self) -> float: ...
+
+    @property
+    def text_to_logprob_ms(self) -> float: ...
+
+    @property
+    def input_tokens(self) -> int | None: ...
+
+    @property
+    def logprobs(self) -> dict[str, float]: ...
 ```
 
 Add the existing `score_record` implementation after `choose_decision`:
 
 ```python
-def score_record(
-    model: str, repetition: int, score: ScoreLike
-) -> MeasurementRecord:
+def score_record(model: str, repetition: int, score: ScoreLike) -> MeasurementRecord:
     """Normalize either backend result into the common measurement schema."""
 
     return {
@@ -124,25 +133,24 @@ integration pipeline.
 
 **Files:**
 - Modify: `tests/unit/test_benchmark_cli.py`
-- Modify: `tests/unit/test_score_record_boundary.py`
+- Modify: `tests/unit/test_benchmark_measurement.py`
 
-- [ ] **Step 1: Import the detailed behavior test from the canonical owner**
+- [ ] **Step 1: Move the detailed behavior test to the canonical owner**
 
-Remove `score_record` from the `benchmark.cli` import block in
-`test_benchmark_cli.py`. Add it to the existing measurement import block:
+Remove the detailed `test_score_record_normalizes_backend_score` test from
+`test_benchmark_cli.py`. Add the test to `test_benchmark_measurement.py` and
+import `score_record` from the measurement module:
 
 ```python
 from compute_cost_encoders_llms.benchmark.measurement import (
-    MeasurementRecord,
     TimedValue,
-    measure_repetitions,
     score_record,
 )
 ```
 
-Keep the existing detailed assertions and all uses of `score_record` intact;
-only the test import owner changes. The boundary test remains the sole exact
-callable-identity assertion.
+Keep the existing detailed assertions intact. The CLI test retains its
+remaining uses of the compatibility import for orchestration assertions, and
+the boundary test remains the sole exact callable-identity assertion.
 
 - [ ] **Step 2: Run focused static and behavioral checks**
 
@@ -173,9 +181,11 @@ UV_CACHE_DIR=/private/tmp/compute-cost-encoders-llms-uv-cache ./scripts/qa.sh
 ```
 
 Require passing Ruff, formatting, ty, unit, integration, acceptance,
-architecture, CRAP, and mutation stages. The fresh baseline is 167 unit tests,
-1 integration test, 6 acceptance tests, 99% coverage, CRAP maximum 5.0, and
-3,175 killed mutants with 49 known no-test CLI parser/main mutants.
+architecture, CRAP, and mutation stages. The pre-refactor baseline is 167 unit
+tests, 1 integration test, 6 acceptance tests, 99% coverage, CRAP maximum 5.0,
+and 3,175 killed mutants with 49 known no-test CLI parser/main mutants. After
+the boundary test is added, the complete suite exercises 168 unit tests (175
+tests total).
 
 - [ ] **Step 2: Inspect mutation categories explicitly**
 
@@ -239,7 +249,7 @@ Run:
 UV_CACHE_DIR=/private/tmp/compute-cost-encoders-llms-uv-cache uv run pytest tests/unit tests/integration tests/acceptance -q
 ```
 
-Require all 174 tests to pass after the commit, not only before it.
+Require all 175 tests to pass after the commit, not only before it.
 
 - [ ] **Step 4: Push and verify local/tracking/remote state**
 

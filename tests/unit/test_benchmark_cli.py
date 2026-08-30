@@ -24,7 +24,6 @@ from compute_cost_encoders_llms.benchmark.cli import (
     _optional_torch_module,
     _source_commit,
     run,
-    score_record,
 )
 from compute_cost_encoders_llms.benchmark.config import BenchmarkConfig
 from compute_cost_encoders_llms.benchmark.encoder import (
@@ -35,7 +34,10 @@ from compute_cost_encoders_llms.benchmark.encoder import (
 )
 from compute_cost_encoders_llms.benchmark.llm import LlamaScore
 from compute_cost_encoders_llms.benchmark.manifest import build_manifest
-from compute_cost_encoders_llms.benchmark.measurement import TimedValue
+from compute_cost_encoders_llms.benchmark.measurement import (
+    TimedValue,
+    score_record,
+)
 from compute_cost_encoders_llms.benchmark.runtime import (
     CudaApi,
     _cuda,
@@ -202,36 +204,6 @@ def capture_measurement_artifacts(
     calls: list[tuple[Path, object]], path: Path, document: object
 ) -> None:
     calls.append((path, document))
-
-
-def test_score_record_normalizes_backend_score() -> None:
-    score = EncoderScore(
-        logprobs={"yes": -0.1, "no": -2.2},
-        tokenization_ms=1.0,
-        model_ms=2.0,
-        logprob_ms=0.1,
-        text_to_logprob_ms=3.1,
-        input_tokens=12,
-    )
-
-    record = score_record("encoder", 3, score)
-
-    assert record["model"] == "encoder"
-    assert record["repetition"] == 3
-    assert record["input_tokens"] == 12
-    assert record["logprobs"] == {"yes": -0.1, "no": -2.2}
-    assert set(record) == {
-        "model",
-        "repetition",
-        "tokenization_ms",
-        "model_ms",
-        "logprob_ms",
-        "text_to_logprob_ms",
-        "input_tokens",
-        "logprobs",
-        "decision",
-    }
-    assert record["decision"] == "yes"
 
 
 def test_build_manifest_captures_reproducibility_fields(monkeypatch) -> None:

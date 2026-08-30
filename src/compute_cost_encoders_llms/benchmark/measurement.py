@@ -5,7 +5,7 @@ import statistics
 import time
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
-from typing import NotRequired, TypedDict, TypeGuard
+from typing import NotRequired, Protocol, TypedDict, TypeGuard
 
 from ._numerics import _is_finite_number
 from .example import candidate_labels
@@ -25,6 +25,26 @@ class MeasurementRecord(TypedDict):
     logprobs: dict[str, float]
     input_tokens: NotRequired[int | None]
     decision: NotRequired[str]
+
+
+class ScoreLike(Protocol):
+    @property
+    def tokenization_ms(self) -> float | None: ...
+
+    @property
+    def model_ms(self) -> float | None: ...
+
+    @property
+    def logprob_ms(self) -> float: ...
+
+    @property
+    def text_to_logprob_ms(self) -> float: ...
+
+    @property
+    def input_tokens(self) -> int | None: ...
+
+    @property
+    def logprobs(self) -> dict[str, float]: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,6 +84,22 @@ def choose_decision(logprobs: Mapping[str, float]) -> str:
     if any(not math.isfinite(float(logprobs[label])) for label in labels):
         raise MeasurementError("logprobs must be finite")
     return max(labels, key=lambda label: float(logprobs[label]))
+
+
+def score_record(model: str, repetition: int, score: ScoreLike) -> MeasurementRecord:
+    """Normalize either backend result into the common measurement schema."""
+
+    return {
+        "model": model,
+        "repetition": repetition,
+        "tokenization_ms": score.tokenization_ms,
+        "model_ms": score.model_ms,
+        "logprob_ms": score.logprob_ms,
+        "text_to_logprob_ms": score.text_to_logprob_ms,
+        "input_tokens": score.input_tokens,
+        "logprobs": score.logprobs,
+        "decision": choose_decision(score.logprobs),
+    }
 
 
 _TIMING_FIELDS = (
