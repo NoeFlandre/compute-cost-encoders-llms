@@ -16,7 +16,7 @@
 - Create: `tests/unit/test_latex_boundary.py`
 - Read: `src/compute_cost_encoders_llms/benchmark/reporting.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create a test that imports the current reporting facade and the intended
 dedicated renderer module, then asserts the two existing renderer names are
@@ -32,7 +32,7 @@ def test_reporting_reexports_latex_renderers() -> None:
     assert reporting_module.render_latex_summary is latex_module.render_latex_summary
 ```
 
-- [ ] **Step 2: Run the focused test and verify the expected red state**
+- [x] **Step 2: Run the focused test and verify the expected red state**
 
 Run:
 
@@ -47,22 +47,21 @@ already present and the test is meaningful.
 ### Task 2: Create the dedicated LaTeX module with the minimum move
 
 **Files:**
+- Modify: `src/compute_cost_encoders_llms/benchmark/_numerics.py`
 - Create: `src/compute_cost_encoders_llms/benchmark/latex.py`
 - Modify: `src/compute_cost_encoders_llms/benchmark/reporting.py`
 
-- [ ] **Step 1: Add the new module imports and moved implementation**
+- [x] **Step 1: Add the new module imports and moved implementation**
 
 Create `latex.py` with this exact import boundary:
 
 ```python
 from __future__ import annotations
 
-import itertools
 from collections.abc import Mapping
 
 from ._mappings import _mapping_field
-from ._numerics import _is_finite_number
-from .example import candidate_labels
+from ._numerics import _number_value
 ```
 
 Move the existing implementation block beginning at
@@ -90,7 +89,6 @@ _model_id
 _comparison_section
 _comparison_values
 _comparison_lines
-_number_value
 _decision_counts_text
 _margin_text
 _reproducibility_section
@@ -100,10 +98,12 @@ _revision
 Replace the moved `ModelSummary` annotations with
 `Mapping[str, object]` annotations in `latex.py`; the runtime values are
 already mappings, and this avoids importing the summary-builder module back
-into the presentation module. Keep `from __future__ import annotations` so
-this type-only refinement has no runtime effect.
+into the presentation module. Move `_number_value` to
+`benchmark/_numerics.py` and import it from both modules so the summary and
+renderer share one numeric conversion. Keep `from __future__ import
+annotations` so this type-only refinement has no runtime effect.
 
-- [ ] **Step 2: Add the compatibility re-exports**
+- [x] **Step 2: Add the compatibility re-exports**
 
 Add this import to `reporting.py` alongside its existing relative imports:
 
@@ -115,7 +115,7 @@ Do not add a reverse import from `latex.py` to `reporting.py`. Keep
 `ModelSummary`, `SummaryDocument`, all measurement helpers, JSON writers, and
 `write_measurement_artifacts` in `reporting.py`.
 
-- [ ] **Step 3: Run the boundary and exact-output tests for green**
+- [x] **Step 3: Run the boundary and exact-output tests for green**
 
 Run:
 
@@ -129,10 +129,11 @@ tests pass with unchanged rendered strings and errors.
 ### Task 3: Refactor the source boundary after green
 
 **Files:**
+- Modify: `src/compute_cost_encoders_llms/benchmark/_numerics.py`
 - Modify: `src/compute_cost_encoders_llms/benchmark/reporting.py`
 - Modify: `tests/unit/test_reporting_document_contract.py`
 
-- [ ] **Step 1: Remove the old implementation block and unused imports**
+- [x] **Step 1: Remove the old implementation block and unused imports**
 
 After Task 2 is green, delete only the moved definitions from
 `reporting.py`. Remove any import that is unused after the deletion; retain
@@ -142,12 +143,12 @@ Update the private `_number_text` contract test to import the helper from
 not change tests that import the public `render_latex_document` or
 `render_latex_summary` from `reporting`.
 
-- [ ] **Step 2: Run the focused suite again**
+- [x] **Step 2: Run the focused suite again**
 
 Run the Task 2 command again. Expected: all focused tests pass, including the
 identity re-export test and byte/string-level formatting assertions.
 
-- [ ] **Step 3: Run a diff and static sanity check**
+- [x] **Step 3: Run a diff and static sanity check**
 
 Run:
 
@@ -166,7 +167,7 @@ errors.
 **Files:**
 - Modify none unless a verified gate failure identifies a direct regression in the refactor.
 
-- [ ] **Step 1: Run the full deterministic project gate**
+- [x] **Step 1: Run the full deterministic project gate**
 
 Run:
 
@@ -179,7 +180,7 @@ acceptance tests, import-linter, and CRAP all pass. Mutation testing must
 report `survived: 0` and `suspicious: 0`; existing `no tests` entries must be
 reported separately and not misrepresented as killed mutants.
 
-- [ ] **Step 2: Verify the mutation result categories explicitly**
+- [x] **Step 2: Verify the mutation result categories explicitly**
 
 Run:
 
@@ -194,13 +195,18 @@ test red, make the smallest fix, rerun green, and repeat the full gate.
 ### Task 5: Commit and publish the verified refactor
 
 **Files:**
+- Modify: `docs/superpowers/specs/2026-08-30-latex-rendering-boundary-design.md`
+- Modify: `src/compute_cost_encoders_llms/benchmark/_numerics.py`
 - Add: `docs/superpowers/plans/2026-08-30-latex-rendering-boundary-refactor.md`
 - Add: `tests/unit/test_latex_boundary.py`
 - Add: `src/compute_cost_encoders_llms/benchmark/latex.py`
 - Modify: `src/compute_cost_encoders_llms/benchmark/reporting.py`
+- Modify: `tests/unit/test_benchmark_cli.py`
+- Modify: `tests/unit/test_benchmark_measurement.py`
+- Modify: `tests/unit/test_mapping_contract.py`
 - Modify: `tests/unit/test_reporting_document_contract.py`
 
-- [ ] **Step 1: Review the exact scope and stage explicit paths**
+- [x] **Step 1: Review the exact scope and stage explicit paths**
 
 Run:
 

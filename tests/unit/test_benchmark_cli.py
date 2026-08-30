@@ -177,6 +177,12 @@ def capture_backend_records(
     return records, {"dtype": "test"}
 
 
+def fail_if_backend_called(
+    *_args: object, **_kwargs: object
+) -> tuple[list[dict[str, object]], dict[str, object]]:
+    raise AssertionError("run selected the wrong backend")
+
+
 def capture_manifest(
     calls: dict[str, object],
     actual_config: BenchmarkConfig,
@@ -718,6 +724,11 @@ def test_run_writes_canonical_artifacts_and_manifest_contract(
         cli_module,
         "_encoder_records" if backend == "encoder" else "_llm_records",
         partial(capture_backend_records, calls, records),
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "_llm_records" if backend == "encoder" else "_encoder_records",
+        fail_if_backend_called,
     )
     monkeypatch.setattr(cli_module, "_source_commit", lambda: "a" * 40)
     monkeypatch.setattr(cli_module, "_hardware", lambda: {"gpu": "test"})

@@ -6,19 +6,22 @@ from typing import cast
 
 import pytest
 
+import compute_cost_encoders_llms.benchmark.latex as latex_module
 import compute_cost_encoders_llms.benchmark.reporting as reporting_module
-from compute_cost_encoders_llms.benchmark.reporting import (
-    MeasurementError,
-    ModelSummary,
+from compute_cost_encoders_llms.benchmark.latex import (
     _comparison_values,
     _decision_text,
-    _group_records,
     _hardware_text,
     _latex_escape,
     _margin_text,
     _model_id,
     _number_text,
     _runtime_line,
+)
+from compute_cost_encoders_llms.benchmark.reporting import (
+    MeasurementError,
+    ModelSummary,
+    _group_records,
     json_line,
     render_latex_document,
     render_latex_summary,
@@ -66,9 +69,9 @@ def test_json_options_preserves_modes_and_rejects_non_boolean() -> None:
 
 
 def test_number_text_uses_shared_numeric_conversion(monkeypatch) -> None:
-    monkeypatch.setattr(reporting_module, "_number_value", lambda _value: 12.5)
+    monkeypatch.setattr(latex_module, "_number_value", lambda _value: 12.5)
 
-    assert reporting_module._number_text(object()) == "12.500"
+    assert _number_text(object()) == "12.500"
 
 
 def test_render_latex_document_preserves_complete_public_report_contract() -> None:

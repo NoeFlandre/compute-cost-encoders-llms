@@ -15,6 +15,12 @@ def _is_finite_number(value: object) -> TypeGuard[int | float]:
     )
 
 
+def _number_value(value: object) -> float | None:
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value)
+    return None
+
+
 def logsumexp(values: Sequence[float]) -> float:
     """Return a numerically stable log-sum-exp for non-empty values."""
 

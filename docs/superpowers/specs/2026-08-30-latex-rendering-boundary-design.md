@@ -20,7 +20,10 @@ The first three concerns form the measurement reporting boundary. The LaTeX
 functions are a pure presentation layer with their own formatting helpers and
 do not need to know how measurements are validated or persisted. Keeping both
 layers in one 565-line module makes changes harder to locate and tests harder
-to target, even though the current complexity and coverage gates pass.
+to target, even though the current complexity and coverage gates pass. The
+numeric coercion helper used by both summary aggregation and LaTeX formatting
+also needs a shared home so the extraction does not create duplicate logic or
+a reverse module dependency.
 
 ## Options Considered
 
@@ -37,6 +40,11 @@ two existing render functions from that module, so current imports and call
 signatures remain valid. Existing exact-output tests continue to protect the
 rendered document contract, while a boundary test proves the implementation
 lives in the dedicated module.
+
+Move the shared `_number_value` coercion helper to the existing
+`benchmark/_numerics.py` module and import it from both consumers. This keeps
+one implementation for numeric values used by summary aggregation and
+presentation.
 
 This is a small, reversible file-boundary change. It does not introduce a new
 document model, change data flow, alter validation, or add runtime behavior.
@@ -56,14 +64,14 @@ Create `src/compute_cost_encoders_llms/benchmark/latex.py` containing:
 - timing, runtime, comparison, and reproducibility sections; and
 - the complete document renderer.
 
-The new module depends only on the shared mapping/numeric/example helpers and
+The new module depends only on the shared mapping and numeric helpers and
 standard-library types. It will not import `reporting.py`, preventing a
 circular dependency.
 
 Keep measurement validation, grouping, summary construction, JSON/JSONL
-serialization, and artifact writing in `reporting.py`. Import the two moved
-public render functions into `reporting.py` so this existing compatibility
-surface remains unchanged:
+serialization, and artifact writing in `reporting.py`. Keep numeric coercion
+in `_numerics.py`. Import the two moved public render functions into
+`reporting.py` so this existing compatibility surface remains unchanged:
 
 ```python
 from .latex import render_latex_document, render_latex_summary
@@ -90,6 +98,10 @@ The existing acceptance and exact-output tests are the regression oracle for
 behavior. The mutation gate must report no `survived` or `suspicious` mutants;
 any `no tests` entries remain explicitly reported rather than being treated as
 kills.
+
+The backend-selection regression test also stubs the unselected backend, so a
+mutated dispatch condition fails deterministically without attempting a live
+network request.
 
 ## Compatibility and Rollback
 

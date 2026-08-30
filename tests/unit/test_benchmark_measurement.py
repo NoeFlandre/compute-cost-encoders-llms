@@ -12,6 +12,12 @@ from scripts.render_report import merge_artifacts
 import compute_cost_encoders_llms.benchmark.measurement as measurement_module
 import compute_cost_encoders_llms.benchmark.reporting as reporting_module
 from compute_cost_encoders_llms.benchmark.encoder import _variant_logprob
+from compute_cost_encoders_llms.benchmark.latex import (
+    _comparison_section,
+    _count_text,
+    _decision_text,
+    _model_summaries,
+)
 from compute_cost_encoders_llms.benchmark.measurement import (
     MeasurementError,
     MeasurementRecord,
@@ -23,10 +29,6 @@ from compute_cost_encoders_llms.benchmark.measurement import (
 )
 from compute_cost_encoders_llms.benchmark.reporting import (
     ModelSummary,
-    _comparison_section,
-    _count_text,
-    _decision_text,
-    _model_summaries,
     build_summary,
     json_line,
     render_latex_document,
